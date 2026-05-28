@@ -6,7 +6,7 @@ Esta plantilla se utilizará para el diseño del comprobante físico (ticket) ge
 
 ```text
 ================================
-       VALLIU RED RECARGA       
+       Juana RED RECARGA       
        [Nombre de Sucursal]     
 ================================
 Fecha: [DD/MM/YYYY HH:MM:SS]
@@ -20,7 +20,7 @@ Método de Pago: [Efectivo/Otro]
 
 MONTO RECARGADO:      $ XXXX.XX
 --------------------------------
-¡Gracias por usar Valliu!
+¡Gracias por usar Juana!
 Conserve este recibo para
 cualquier reclamo o soporte.
 ================================

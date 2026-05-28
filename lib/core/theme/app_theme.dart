@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  // Paleta Valliu conforme a captura Angular proporcionada
+  // Paleta Juana conforme a captura Angular proporcionada
   static const Color primaryPurple = Color(0xFF6642F8);
   static const Color darkSlate = Color(0xFF3F3D56);
   static const Color backgroundGray = Color(0xFFF5F7FA);
   static const Color pureWhite = Color(0xFFFFFFFF);
-  static const Color accentBlue = Color(0xFF7BA8C2); // Color del botón Guardar en la captura
+  static const Color accentBlue =
+      Color(0xFF7BA8C2); // Color del botón Guardar en la captura
 
   static ThemeData get lightTheme {
     return ThemeData(
@@ -70,7 +71,8 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: pureWhite,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: Colors.grey.shade300),

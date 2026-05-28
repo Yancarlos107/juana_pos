@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/sales/screens/dashboard_screen.dart';
@@ -8,6 +9,7 @@ import 'core/theme/app_theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   runApp(const ProviderScope(child: MyApp()));
 }
 
@@ -17,7 +19,7 @@ class MyApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp(
-      title: 'Valliu POS',
+      title: 'Juana POS',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       home: const AuthGate(),
@@ -40,10 +42,13 @@ class AuthGate extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator(color: Color(0xFF6642F8))),
+            body: Center(
+                child: CircularProgressIndicator(color: Color(0xFF6642F8))),
           );
         }
-        if (snapshot.hasData && snapshot.data != null && snapshot.data!.isNotEmpty) {
+        if (snapshot.hasData &&
+            snapshot.data != null &&
+            snapshot.data!.isNotEmpty) {
           return const DashboardScreen();
         }
         return const LoginScreen();

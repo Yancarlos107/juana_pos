@@ -2,9 +2,9 @@
 
 #### 1. Alcance
 
-Este documento describe el flujo funcional y los endpoints que utiliza la **consola de Red de Recarga** del back‑office Valliu, accesible desde el frontend Angular en:
+Este documento describe el flujo funcional y los endpoints que utiliza la **consola de Red de Recarga** del back‑office Juana, accesible desde el frontend Angular en:
 
-- `https://sir-siva.valliu.co/back-office/recargar`
+- `https://sir-siva.Juana.co/back-office/recargar`
 
 Se documentan:
 
@@ -65,7 +65,7 @@ La consola de Red de Recarga se apoya en autenticación **Laravel Sanctum** y en
 {
   "id": 10,
   "name": "Operador Red Recarga",
-  "email": "operador@valliu.co",
+  "email": "operador@Juana.co",
   "branch_id": 1,
   "roles": ["cajero", "operador_red"]
 }

@@ -1,4 +1,4 @@
-# Estado Actual del Proyecto: Valliu POS (v2.13)
+# Estado Actual del Proyecto: Juana POS (v2.13)
 
 A continuación se detalla el resumen completo de todos los cambios implementados, el estado actual del proyecto y las características funcionales que están listas para producción.
 
@@ -48,4 +48,4 @@ A continuación se detalla el resumen completo de todos los cambios implementado
 1. **Pruebas en Campo**: Desplegar la aplicación en un dispositivo físico de la flota y monitorear la respuesta del hardware (impresora) durante un turno completo.
 2. **Monitoreo**: Estar atentos a reportes sobre conexión de red en zonas de baja cobertura, aunque la validación local de saldo mitiga este riesgo temporalmente.
 
-El sistema POS de Valliu está **completamente funcional, depurado y listo para operar** bajo los requerimientos especificados.
+El sistema POS de Juana está **completamente funcional, depurado y listo para operar** bajo los requerimientos especificados.

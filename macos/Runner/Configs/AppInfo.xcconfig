@@ -8,7 +8,7 @@
 PRODUCT_NAME = red_recarga_pos
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = co.valliu.redRecargaPos
+PRODUCT_BUNDLE_IDENTIFIER = co.Juana.redRecargaPos
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 co.valliu. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 co.Juana. All rights reserved.

@@ -65,8 +65,8 @@ class SessionService {
         'status': 'closed',
         'closed_at': now.toIso8601String(),
       },
-      where: 'status = ? AND branch_id = ?',
-      whereArgs: ['open', branchId],
+      where: 'status = ?',
+      whereArgs: ['open'],
     );
   }
 }

@@ -35,31 +35,35 @@ class BackgroundSyncService {
 
   Future<void> _syncTransactions() async {
     final db = await DatabaseHelper.instance.database;
-    final pending = await db.query('transactions', where: 'status = ?', whereArgs: ['pending']);
-    
+    final pending = await db
+        .query('transactions', where: 'status = ?', whereArgs: ['pending']);
+
     if (pending.isEmpty) return;
 
     for (final tx in pending) {
       try {
-        // Reconstruimos el payload para Valliu
+        // Reconstruimos el payload para Juana
         final payload = {
           "product_id": tx['product_id'],
           "amount": tx['amount'],
-          "offline_id": tx['id'], // ID generado localmente
+          "offline_id": tx['id'], // ID local generado offline
           "pmr": tx['pmr'] == 1,
           "created_at": tx['created_at']
         };
 
-        // endpoint para compras. Se asume que el backend acepta "offline_id" para evitar duplicados.
-        final response = await _dio.post('/gateway/v1/purchases', data: payload);
-        
+        // Endpoint para compras. El backend usa "offline_id" para evitar duplicados.
+        final response =
+            await _dio.post('/gateway/v1/purchases', data: payload);
+
         if (response.statusCode == 200 || response.statusCode == 201) {
-           await db.update('transactions', {'status': 'synced'}, where: 'id = ?', whereArgs: [tx['id']]);
-           print('DEBUG: Venta offline ${tx['id']} sincronizada con éxito.');
+          // Usar local_id (PK autoincrement) para el UPDATE
+          await db.update('transactions', {'status': 'synced'},
+              where: 'local_id = ?', whereArgs: [tx['local_id']]);
+          print('DEBUG: Venta offline ${tx['id']} sincronizada con éxito.');
         }
       } catch (e) {
         print('DEBUG: Fallo al sincronizar transaccion ${tx['id']}: $e');
-        // Si falla, se queda en pending para el próximo intento de ping
+        // Si falla, se queda en pending para el próximo intento
       }
     }
   }
@@ -67,18 +71,20 @@ class BackgroundSyncService {
   Future<void> _syncSessions() async {
     final db = await DatabaseHelper.instance.database;
     // Cierres de caja locales que aún no se sincronizan
-    final closedSessions = await db.query('sessions', where: 'status = ?', whereArgs: ['closed']);
-    
+    final closedSessions =
+        await db.query('sessions', where: 'status = ?', whereArgs: ['closed']);
+
     // Si la API tiene un endpoint para consolidar sesiones, lo llamamos aquí.
-    // Por el momento, preparamos la estructura marcándolas como "synced_closed" 
+    // Por el momento, preparamos la estructura marcándolas como "synced_closed"
     // una vez que los endpoints estén disponibles.
     for (final session in closedSessions) {
       try {
-         // await _dio.post('/gateway/v1/sessions/close', data: {"session_id": session['id']});
-         await db.update('sessions', {'status': 'synced_closed'}, where: 'id = ?', whereArgs: [session['id']]);
-         print('DEBUG: Sesión ${session['id']} marcada como sincronizada.');
+        // await _dio.post('/gateway/v1/sessions/close', data: {"session_id": session['id']});
+        await db.update('sessions', {'status': 'synced_closed'},
+            where: 'id = ?', whereArgs: [session['id']]);
+        print('DEBUG: Sesión ${session['id']} marcada como sincronizada.');
       } catch (e) {
-         print('DEBUG: Fallo al sincronizar sesion ${session['id']}: $e');
+        print('DEBUG: Fallo al sincronizar sesion ${session['id']}: $e');
       }
     }
   }

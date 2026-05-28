@@ -49,6 +49,58 @@ class LocalStorageRepository {
     return prefs.getStringList(_userRolesKey);
   }
 
+  Future<void> savePosLocationId(int locationId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('active_pos_location_id', locationId);
+  }
+
+  Future<int?> getPosLocationId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt('active_pos_location_id');
+  }
+
+  Future<void> savePosLocationName(String name) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('active_pos_location_name', name);
+  }
+
+  Future<String?> getPosLocationName() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('active_pos_location_name');
+  }
+
+  static const String _locationsListKey = 'cached_locations';
+
+  Future<void> savePosLocationsList(List<dynamic> locationsJson) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_locationsListKey, jsonEncode(locationsJson));
+  }
+
+  Future<List<dynamic>?> getPosLocationsList() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = prefs.getString(_locationsListKey);
+    if (jsonString != null) {
+      return jsonDecode(jsonString) as List<dynamic>;
+    }
+    return null;
+  }
+
+  static const String _noveltiesKey = 'cached_novelties';
+
+  Future<void> saveNovelties(List<dynamic> noveltiesJson) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_noveltiesKey, jsonEncode(noveltiesJson));
+  }
+
+  Future<List<dynamic>?> getNovelties() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = prefs.getString(_noveltiesKey);
+    if (jsonString != null) {
+      return jsonDecode(jsonString) as List<dynamic>;
+    }
+    return null;
+  }
+
   Future<void> saveBalance(double balance) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_balanceKey, balance);

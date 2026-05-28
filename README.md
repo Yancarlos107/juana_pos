@@ -1,4 +1,4 @@
-# Valliu Sistema POS (Red de Recarga) - Documentación Maestra
+# Juana Sistema POS (Red de Recarga) - Documentación Maestra
 
 **⚠️ AVISO PARA AGENTES DE IA ⚠️**
 Este `README.md` es la **ÚNICA FUENTE DE VERDAD** para las reglas de negocio, el flujo operativo y el estado del proyecto. Debes basar todas tus implementaciones en este documento. 
@@ -31,7 +31,7 @@ Este es el flujo funcional completo, integrando operaciones en línea y fuera de
 - Data de caja vs Red de recarga
 
 ### 2. Login (Online / Offline)
-2.1. **Online:** Autenticación directa contra la API de Valliu y descarga de inicialización (Paso 1).
+2.1. **Online:** Autenticación directa contra la API de Juana y descarga de inicialización (Paso 1).
 2.2. **Sin sesión:** Si no hay sesión de caja abierta, el sistema procede a abrir una nueva.
 2.3. **Sesión del mismo día:** Si ya existe una sesión de caja abierta correspondiente al mismo día, avisa al usuario e inicia el módulo de ventas sobre esa misma sesión.
 2.4. **Sesión de otro día (atrasada):** Si hay una sesión de caja abierta de un día anterior, el sistema avisa al usuario, la cierra automáticamente marcándola como "tardía", e inicia ventas abriendo una nueva sesión.
@@ -50,7 +50,7 @@ Flujo para registrar la apertura de caja y el saldo o fondo base antes de comenz
 6.1. Pantalla resumen que muestra: Total de ventas desglosado por cada producto, su valor total y la suma global.
 6.2. **Impresión de la tirilla de cierre de caja:**
    - Subtotal por cada producto y el total general.
-   - **En Línea:** Crea un código QR con la estructura JSON del cierre y lo transmite a Valliu.
+   - **En Línea:** Crea un código QR con la estructura JSON del cierre y lo transmite a Juana.
    - **Offline:** Crea un código QR principal (JSON del cierre) y códigos QR adicionales manuales (estructura tag-and-value, compresión, encriptación, base64) para subida manual.
 6.3. Las transacciones y cierres quedan pendientes localmente y se transmiten automáticamente cuando el servicio de monitoreo detecta conexión (marcado como "cerrado offline").
 

@@ -93,9 +93,20 @@ class SalesService {
       if (e.response?.statusCode == 422) {
         final errors = e.response?.data;
         if (errors is Map && errors.containsKey('message')) {
-          throw Exception(errors['message']);
+          final msg = errors['message'].toString();
+          if (msg.contains('infrastructure_missing')) {
+            throw Exception('Configuración de cuenta faltante para la empresa o sucursal.');
+          }
+          throw Exception(msg);
         }
         throw Exception('Error de validación. Verifique los datos.');
+      }
+      if (e.response?.statusCode == 403) {
+        final msg = e.response?.data?['message']?.toString() ?? '';
+        if (msg.contains('cashier_missing_branch')) {
+          throw Exception('Cajero sin sucursal asignada. Por favor seleccione una sucursal.');
+        }
+        throw Exception('Permiso denegado: No es un cajero válido.');
       }
       if (e.response?.statusCode == 401) {
         throw Exception('Sesión expirada. Inicie sesión nuevamente.');

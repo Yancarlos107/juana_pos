@@ -14,19 +14,19 @@ class AuthService {
 
   /// Realiza login con email y contraseña.
   /// Devuelve el UserModel si es exitoso (incluye token, sucursal, etc).
-  Future<UserModel> login(String email, String password) async {
+  Future<UserModel> login(String phoneOrEmail, String password) async {
     try {
       final response = await _dio.post(
         ApiConstants.login,
         data: {
-          'email': email,
+          'phone_number': phoneOrEmail,
           'password': password,
           'device_name': 'pos_flutter',
         },
       );
 
-      final data = response.data['data'] as Map<String, dynamic>?;
-      if (data == null) throw Exception('Formato de respuesta inválido (falta data)');
+      final data = response.data as Map<String, dynamic>?;
+      if (data == null) throw Exception('Formato de respuesta inválido');
       
       final token = data['token']?.toString();
       if (token == null) throw Exception('No se encontró el token en la respuesta');
@@ -49,7 +49,7 @@ class AuthService {
           e.type == DioExceptionType.receiveTimeout || 
           e.type == DioExceptionType.connectionError ||
           e.type == DioExceptionType.unknown) {
-        return _offlineLogin(email, password);
+        return _offlineLogin(phoneOrEmail, password);
       }
 
       final serverMessage = e.response?.data?['message'];

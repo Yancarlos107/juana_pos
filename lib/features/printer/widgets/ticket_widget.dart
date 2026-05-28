@@ -38,7 +38,7 @@ class TicketWidget extends StatelessWidget {
         children: [
           // === Encabezado ===
           const Text(
-            'VALLIU',
+            'Juana',
             style: TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.w900,
@@ -120,7 +120,7 @@ class TicketWidget extends StatelessWidget {
 
           // === Pie ===
           const Text(
-            'Gracias por usar Valliu!',
+            'Gracias por usar Juana!',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.bold,
@@ -200,7 +200,7 @@ class ClosingTicketWidget extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('VALLIU',
+          const Text('Juana',
               style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w900,
@@ -228,9 +228,7 @@ class ClosingTicketWidget extends StatelessWidget {
           Text(
             'TOTAL: \$ ${totalAmount.toStringAsFixed(0)}',
             style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-                color: Colors.black),
+                fontSize: 24, fontWeight: FontWeight.w900, color: Colors.black),
           ),
           const SizedBox(height: 8),
           Container(height: 1, color: Colors.black26),

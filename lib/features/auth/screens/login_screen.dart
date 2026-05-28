@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/auth_providers.dart';
 import '../../printer/services/printer_service.dart';
+import '../../../core/storage/local_storage_repository.dart';
+import '../widgets/location_selection_dialog.dart';
+import '../../sales/services/closure_service.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -16,7 +19,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _userFocusNode = FocusNode();
   final _passwordFocusNode = FocusNode();
-  
+
   TextEditingController? _activeController;
   bool _obscurePassword = true;
 
@@ -51,17 +54,35 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           _emailController.text.trim(),
           _passwordController.text.trim(),
         );
-    
-    // Si llegamos aquí sin excepción, navegamos al Dashboard
-    if (mounted && ref.read(authProvider).status == AuthStatus.authenticated) {
-      Navigator.pushReplacementNamed(context, '/dashboard');
+
+    final authState = ref.read(authProvider);
+    // Si llegamos aquí sin excepción, solicitamos el Punto de Venta
+    if (mounted && authState.status == AuthStatus.authenticated) {
+      // 1. Abrimos la caja en el servidor (RC171)
+      try {
+        final closureService = ref.read(closureServiceProvider);
+        await closureService.openRegister(authState.user!.name);
+      } catch (e) {
+        print('Advertencia: No se pudo abrir la caja en el backend: $e');
+      }
+
+      // 2. Pedimos punto de venta (UI)
+      final success = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const LocationSelectionDialog(),
+      );
+
+      if (mounted && success == true) {
+        Navigator.pushReplacementNamed(context, '/dashboard');
+      }
     }
   }
 
   Future<void> _testPrint() async {
     print('DEBUG: Iniciando _testPrint...');
     final printer = ref.read(printerServiceProvider);
-    
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -74,7 +95,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               children: [
                 CircularProgressIndicator(color: Color(0xFF6642F8)),
                 SizedBox(height: 16),
-                Text('Buscando impresora USB...', style: TextStyle(fontWeight: FontWeight.bold)),
+                Text('Buscando impresora USB...',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
               ],
             ),
           ),
@@ -86,18 +108,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final success = await printer.printTicket(
       transactionId: '12345',
       amount: 5000,
-      qrData: 'VALLIU-TEST-TICKET',
+      qrData: 'Juana-TEST-TICKET',
       cashierName: 'Operador de Prueba',
       branchName: 'Sucursal de Prueba',
     );
     print('DEBUG: Resultado de printTicket: $success');
 
-    if (mounted) Navigator.of(context).pop(); 
+    if (mounted) Navigator.of(context).pop();
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(success ? '¡Prueba de impresión exitosa!' : 'Error: No se detectó impresora USB'),
+          content: Text(success
+              ? '¡Prueba de impresión exitosa!'
+              : 'Error: No se detectó impresora USB'),
           backgroundColor: success ? Colors.green : Colors.red,
           duration: const Duration(seconds: 4),
         ),
@@ -150,8 +174,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ),
             ),
             child: authState.status == AuthStatus.loading
-                ? const SizedBox(height: 28, width: 28, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
-                : const Text('INICIAR SESIÓN', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                ? const SizedBox(
+                    height: 28,
+                    width: 28,
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 3))
+                : const Text('INICIAR SESIÓN',
+                    style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1)),
           ),
         ],
       ),
@@ -166,9 +198,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         borderRadius: BorderRadius.circular(16),
         onTap: () => _onNumPadTap(label),
         child: Center(
-          child: icon != null 
-            ? Icon(icon, color: color ?? const Color(0xFF3F3D56), size: 28)
-            : Text(label, style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: color ?? const Color(0xFF3F3D56))),
+          child: icon != null
+              ? Icon(icon, color: color ?? const Color(0xFF3F3D56), size: 28)
+              : Text(label,
+                  style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: color ?? const Color(0xFF3F3D56))),
         ),
       ),
     );
@@ -176,27 +212,30 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Widget _buildForm() {
     final authState = ref.watch(authProvider);
-    
+
     return Form(
       key: _formKey,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Image.asset(
-            'assets/valliu-logo.png',
-            height: 90,
-            errorBuilder: (ctx, err, stack) => Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: const Color(0xFF6642F8).withOpacity(0.1),
-                shape: BoxShape.circle,
+          Center(
+            child: Image.asset(
+              'assets/Juana-logo.png',
+              height: 90,
+              errorBuilder: (ctx, err, stack) => Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6642F8).withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.point_of_sale_rounded,
+                    color: Color(0xFF6642F8), size: 40),
               ),
-              child: const Icon(Icons.point_of_sale_rounded, color: Color(0xFF6642F8), size: 40),
             ),
           ),
           const SizedBox(height: 24),
           const Text(
-            'Bienvenido a Valliu',
+            'Bienvenido a Juana',
             style: TextStyle(
               fontSize: 26,
               fontWeight: FontWeight.w900,
@@ -227,7 +266,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFF6642F8), width: 2),
+                borderSide:
+                    const BorderSide(color: Color(0xFF6642F8), width: 2),
               ),
             ),
             validator: (v) => v!.isEmpty ? 'Requerido' : null,
@@ -239,22 +279,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             readOnly: true,
             showCursor: true,
             obscureText: _obscurePassword,
-            onTap: () => setState(() => _activeController = _passwordController),
+            onTap: () =>
+                setState(() => _activeController = _passwordController),
             decoration: InputDecoration(
               labelText: 'Contraseña',
               prefixIcon: const Icon(Icons.lock_outline),
               filled: _activeController == _passwordController,
               fillColor: const Color(0xFF6642F8).withOpacity(0.05),
               suffixIcon: IconButton(
-                icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
-                onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                icon: Icon(
+                    _obscurePassword ? Icons.visibility_off : Icons.visibility),
+                onPressed: () =>
+                    setState(() => _obscurePassword = !_obscurePassword),
               ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFF6642F8), width: 2),
+                borderSide:
+                    const BorderSide(color: Color(0xFF6642F8), width: 2),
               ),
             ),
             validator: (v) => v!.isEmpty ? 'Requerido' : null,
@@ -291,7 +335,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               // Pantalla grande: Mostrar en dos columnas (Row)
               return Center(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 24),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 48, vertical: 24),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.center,
@@ -305,7 +350,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ),
                         ),
                       ),
-                      Container(width: 1, height: 400, color: Colors.grey.shade200),
+                      Container(
+                          width: 1, height: 400, color: Colors.grey.shade200),
                       Expanded(
                         flex: 6,
                         child: Center(
@@ -325,7 +371,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               // Pantalla pequeña: Mostrar en una sola columna (Column)
               return Center(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [

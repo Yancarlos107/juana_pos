@@ -4,8 +4,8 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
 
 class DatabaseHelper {
-  static const _databaseName = "ValliuPos.db";
-  static const _databaseVersion = 1;
+  static const _databaseName = "JuanaPos.db";
+  static const _databaseVersion = 4;
 
   // Singleton class
   DatabaseHelper._privateConstructor();
@@ -25,7 +25,46 @@ class DatabaseHelper {
       path,
       version: _databaseVersion,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
+  }
+
+  Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      // Migración v1 → v2: Recrear tabla transactions con esquema correcto
+      await db.execute('DROP TABLE IF EXISTS transactions');
+      await db.execute('''
+        CREATE TABLE transactions (
+          local_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          id TEXT,
+          session_id INTEGER,
+          product_id TEXT,
+          amount REAL NOT NULL,
+          pmr INTEGER DEFAULT 0,
+          status TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          qr_data TEXT
+        )
+      ''');
+    }
+    if (oldVersion < 3) {
+      // Migración v2 → v3: products.id pasa de INTEGER a TEXT (MongoDB _id)
+      await db.execute('DROP TABLE IF EXISTS products');
+      await db.execute('''
+        CREATE TABLE products (
+          id TEXT PRIMARY KEY,
+          product_name TEXT NOT NULL,
+          value REAL NOT NULL,
+          pmr INTEGER DEFAULT 0,
+          created_at TEXT
+        )
+      ''');
+    }
+    if (oldVersion < 4) {
+      // Migración v3 → v4: Add print_status column to transactions
+      await db.execute(
+          'ALTER TABLE transactions ADD COLUMN print_status INTEGER DEFAULT 0');
+    }
   }
 
   Future _onCreate(Database db, int version) async {
@@ -41,10 +80,10 @@ class DatabaseHelper {
       )
     ''');
 
-    // 2. Tarifas (Productos)
+    // 2. Tarifas (Productos) — id es el _id de MongoDB (TEXT)
     await db.execute('''
       CREATE TABLE products (
-        id INTEGER PRIMARY KEY,
+        id TEXT PRIMARY KEY,
         product_name TEXT NOT NULL,
         value REAL NOT NULL,
         pmr INTEGER DEFAULT 0,
@@ -65,13 +104,15 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE transactions (
         local_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        type TEXT NOT NULL, -- 'sale', 'pmr_manual', etc.
+        id TEXT,
+        session_id INTEGER,
+        product_id TEXT,
         amount REAL NOT NULL,
-        product_id INTEGER,
         pmr INTEGER DEFAULT 0,
-        session_id INTEGER NOT NULL,
+        status TEXT NOT NULL,
         created_at TEXT NOT NULL,
-        status TEXT NOT NULL -- 'pending', 'synced'
+        qr_data TEXT,
+        print_status INTEGER DEFAULT 0
       )
     ''');
 

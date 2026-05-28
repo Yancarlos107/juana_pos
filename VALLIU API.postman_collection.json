@@ -1,0 +1,1969 @@
+{
+  "info": {
+    "_postman_id": "1734787d-8c55-4362-9a79-a5423bd0d1dc",
+    "name": "Juana API",
+    "description": "Colección base del backend Juana (Laravel).\n\n**Scope inicial**: auth admin + cashiers (incluye flujo `cashier-with-user-login` del feature branch `feat/cashier-with-user-login`).\n\n**Variables esperadas en el environment**:\n- `base_url` → ej. `http://localhost:8089`\n- `admin_email`, `admin_password` → credenciales (default seed: admin@test.com / 2s93CSqBV5)\n- `admin_token` → lo setea automáticamente el request `Login admin` en su script de tests\n- `company_id`, `branch_id`, `identification_type_id` → IDs reales del operator (defaults sensatos en el environment)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "7714582"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login admin",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\",\n  \"device_name\": \"postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/sanctum/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sanctum",
+                "token"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login cashier",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const json = pm.response.json();",
+                  "const payload = json.data || json;",
+                  "const token = payload.token;",
+                  "",
+                  "pm.test('Token present', () => pm.expect(token).to.be.a('string').and.not.empty);",
+                  "pm.test('Es cashier (no admin)', () => {",
+                  "    pm.expect(payload).to.have.property('cashier');",
+                  "    pm.expect(payload.cashier).to.have.property('id');",
+                  "});",
+                  "pm.test('Trae branch (sucursal)', () => pm.expect(payload).to.have.property('branch'));",
+                  "",
+                  "if (token) {",
+                  "    pm.environment.set('cashier_token', token);",
+                  "    console.log('cashier_token guardado (len=' + token.length + ')');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number\": \"{{cashier_phone}}\",\n  \"password\": \"{{cashier_password}}\",\n  \"device_name\": \"postman-cashier\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/cashier-login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "cashier-login"
+              ]
+            },
+            "description": "Login dedicado para cashiers (endpoint nuevo `POST /api/cashier-login`, separado del `/api/sanctum/token` del admin).\n\nA diferencia del login normal:\n- Solo acepta `phone_number` (no email).\n- `password` debe ser numerica (regex `[0-9]+`).\n- El backend valida que el user tenga registro en `cashiers` Y que `cashiers.is_active = true`.\n- El response NO incluye `profile/account/cards` (datos de pasajero). En su lugar trae `cashier`, `branch` (sucursal) y `company` (operator).\n\nEl script de tests guarda el token en `{{cashier_token}}` para que requests futuros del POS lo puedan usar como Bearer (override manual del auth a `{{cashier_token}}` en cada request, o configurar una variable comun)."
+          },
+          "response": []
+        }
+      ],
+      "description": "Login con sanctum/token. El test script extrae `data.token` (o `token` si el wrap está desactivado) y lo guarda en `{{admin_token}}` para que el resto de los requests lo usen automáticamente."
+    },
+    {
+      "name": "Cashiers",
+      "item": [
+        {
+          "name": "Create cashier (legacy)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Cajero Legacy {{$timestamp}}\",\n  \"document_number\": \"DOC{{$timestamp}}\",\n  \"identification_type_id\": {{identification_type_id}},\n  \"company_id\": {{company_id}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/cashiers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "cashiers"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create cashier with user login",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Juan Cajero {{$timestamp}}\",\n  \"document_number\": \"{{$timestamp}}\",\n  \"identification_type_id\": {{identification_type_id}},\n  \"company_id\": {{company_id}},\n  \"branch_id\": {{branch_id}},\n  \"phone_number\": \"{{cashier_phone}}\",\n  \"email\": \"juan{{$timestamp}}@operator.com\",\n  \"password\": \"{{cashier_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/cashiers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "cashiers"
+              ]
+            },
+            "description": "Flujo NUEVO con login. Requeridos cuando viene `phone_number`: `password` (numerica, solo digitos), `branch_id`. `email` es opcional (puede loguear por phone).\n\n**Una sola password en plano**. El backend la recibe en plano y la guarda de dos formas:\n- `users.password` -> bcrypt (sesion web, sanctum token).\n- `users.device_login_password` -> sha1 del mismo password (el mutator del modelo User lo hashea automaticamente). Ese sha1 se sincroniza al device POS por otro endpoint futuro, y el POS lo usa offline para validar lo que tipea el cashier (sha1 de lo tipeado vs sha1 almacenado).\n\nYa no se manda `device_login_password` en el body — el backend lo deriva del `password`.\n\nValidacion `password`: numerica unicamente (`regex:/^[0-9]+$/`), min 6 digitos, max 255.\n\nEl backend crea User con `email_verified_at = now()` y NO dispara `ProfileAccountCardCreatorJob` (cashier no es pasajero, no necesita billetera/cards)."
+          },
+          "response": []
+        },
+        {
+          "name": "Initialize POS (sync de cashiers + fares)",
+          "event": [
+            {
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const json = pm.response.json();",
+                  "",
+                  "pm.test('Top-level: cashiers / products / routes / config', () => {",
+                  "    pm.expect(json).to.have.property('cashiers').that.is.an('array');",
+                  "    pm.expect(json).to.have.property('products').that.is.an('array');",
+                  "    pm.expect(json).to.have.property('routes').that.is.an('array');",
+                  "    pm.expect(json).to.have.property('config').that.is.an('object');",
+                  "});",
+                  "",
+                  "if (json.cashiers && json.cashiers.length > 0) {",
+                  "    const c = json.cashiers[0];",
+                  "    pm.test('cashier[0] tiene user/cashier/branch/company', () => {",
+                  "        pm.expect(c).to.have.all.keys('user','cashier','branch','company');",
+                  "    });",
+                  "    pm.test('cashier[0].user expone device_login_password (sha1)', () => {",
+                  "        pm.expect(c.user).to.have.property('device_login_password').that.matches(/^[0-9a-f]{40}$/);",
+                  "    });",
+                  "}",
+                  "",
+                  "if (json.products && json.products.length > 0) {",
+                  "    const p = json.products[0];",
+                  "    pm.test('product[0] tiene fares anidadas', () => {",
+                  "        pm.expect(p).to.have.property('fares').that.is.an('array');",
+                  "    });",
+                  "    if (p.fares && p.fares.length > 0) {",
+                  "        const f = p.fares[0];",
+                  "        pm.test('fare tiene is_pmr', () => pm.expect(f).to.have.property('is_pmr'));",
+                  "        pm.test('fare tiene transshipment_applies', () => pm.expect(f).to.have.property('transshipment_applies'));",
+                  "    }",
+                  "}",
+                  "",
+                  "if (json.routes && json.routes.length > 0) {",
+                  "    const r = json.routes[0];",
+                  "    pm.test('route[0] tiene long_name + short_name', () => {",
+                  "        pm.expect(r).to.have.property('long_name');",
+                  "        pm.expect(r).to.have.property('short_name');",
+                  "    });",
+                  "    pm.test('route[0] NO trae stops anidadas (payload liviano)', () => {",
+                  "        pm.expect(r).to.not.have.property('stops');",
+                  "    });",
+                  "}",
+                  "",
+                  "console.log('cashiers:', (json.cashiers||[]).length,",
+                  "            'products:', (json.products||[]).length,",
+                  "            'routes:', (json.routes||[]).length,",
+                  "            'config keys:', Object.keys(json.config||{}).length);"
+                ],
+                "type": "text/javascript"
+              },
+              "listen": "test"
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cashier_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "value": "application/json",
+                "key": "Accept"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/cashier-initialize?city=valledupar",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "cashier-initialize"
+              ],
+              "query": [
+                {
+                  "key": "city",
+                  "value": "valledupar"
+                }
+              ]
+            },
+            "description": "Endpoint de bootstrap del device POS. Despues del `Login cashier`, el device llama a este para descargar todo lo que necesita para operar (incluso offline).\n\n**Auth**: requiere `{{cashier_token}}` (override del Bearer `{{admin_token}}` heredado de la coleccion). Tiene que ser un user autenticado que ademas tenga registro en `cashiers`. Si el caller no es cashier → 403.\n\n**Query params**:\n- `city` (opcional): para resolver la network mas reciente y devolver sus routes. Si no se pasa, `routes` viene como [].\n\n**Shape del response**:\n```json\n{\n  \\\"cashiers\\\": [\n    { \\\"user\\\": { ..., \\\"device_login_password\\\": \\\"<sha1 hex>\\\" },\n      \\\"cashier\\\": { ... }, \\\"branch\\\": { ... }, \\\"company\\\": { ... } }\n  ],\n  \\\"products\\\": [\n    { \\\"id\\\": ..., \\\"name\\\": \\\"Pasaje Adulto\\\",\n      \\\"fares\\\": [\n        { \\\"id\\\": ..., \\\"name\\\": \\\"Adulto dia\\\", \\\"value\\\": \\\"2500\\\", \\\"is_pmr\\\": false, \\\"is_qr\\\": false,\n          \\\"transshipment_applies\\\": false, \\\"transshipments\\\": null, \\\"fare_stops\\\": null },\n        { \\\"id\\\": ..., \\\"name\\\": \\\"Adulto Transbordo\\\", \\\"transshipment_applies\\\": true,\n          \\\"transshipments\\\": [ { \\\"source_path\\\": 2, \\\"source_name\\\": \\\"R-TUR\\\", \\\"routes_destinations\\\": [3,4] } ],\n          \\\"fare_stops\\\": [ { \\\"id\\\":..., \\\"route\\\": {\\\"short_name\\\":\\\"R-TUR\\\",\\\"id\\\":2},\n                              \\\"stop\\\": {\\\"short_name\\\":\\\"...\\\",\\\"id\\\":5,\\\"geodata\\\":[...]} } ] }\n      ] }\n  ],\n  \\\"routes\\\": [\n    { \\\"id\\\":..., \\\"long_name\\\":\\\"R-TUR\\\", \\\"short_name\\\":\\\"R-TUR\\\", \\\"network_id\\\":2,\n      \\\"stops\\\": [ {...} ] }\n  ]\n}\n```\n\n**Detalles del shape de fares** (reusa `WriteFindProductFare`):\n- Products filtra por `product_category_id IN [1,3]` (BILLETERA-QR + TRANSPORTE PUBLICO).\n- Cada fare con `transshipment_applies=true` trae `transshipments` con `source_name` (short_name de la route origen) y `fare_stops` con route + stop eager-loaded.\n- Si `transshipment_applies=false`, los dos campos vienen como `null`.\n\n**Detalles del shape de routes**:\n- Network filtrada por `where('city', $city)` + `orderBy('version','desc')->latest()` → la mas actualizada.\n- Cada route con `stops` eager-loaded (con `geodata`).\n\n**Importante**: `user.device_login_password` se expone aca a proposito (en el resto de endpoints esta oculto via `$hidden` del User model). El POS lo guarda localmente para validar login offline.\n\n**Flow tipico del device**:\n1. `POST /api/cashier-login` con un cashier valido → obtiene token.\n2. `GET /api/cashier-initialize?city=<city>` con ese token → recibe lista de cashiers + products (con fares anidadas + fare_stops + transshipments procesados) + routes (con stops).\n3. Cachea localmente. Ahora cualquier cashier de la misma company puede loguear offline en este device."
+          },
+          "response": []
+        }
+      ],
+      "description": "Endpoint `POST /api/cashiers` unificado del feature `cashier-with-user-login`.\n\nEl controller hace switch automático:\n- **Sin `phone_number`+`password`** → flujo legacy (solo crea registro en `cashiers`).\n- **Con `phone_number`+`password`** → flujo nuevo `WriteCreateCashierWithUser`: crea User + Cashier atómico, con `device_login_password` hasheado sha1 (login offline en POS) y `email_verified_at = now()` para que pueda loguear por phone.\n\nValidación: si llega `phone_number`, los campos `password`, `device_login_password`, `branch_id` pasan a ser required."
+    },
+    {
+      "name": "POS Transactions",
+      "item": [
+        {
+          "name": "Create pos_transaction (RC170)",
+          "event": [
+            {
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Genera el token multi-QR en formato binario hex packed (v=1).",
+                  "// [count: 2B uint16 BE] + N x [ version 1B | datetime 4B BE | cashier 2B BE | fare 2B BE | expired 2B BE | nonce 2B BE ]",
+                  "// Total bytes = 2 + (N * 13). Max N = 65,535.",
+                  "",
+                  "const qrCount     = parseInt(pm.collectionVariables.get('qr_count')        || '1', 10);",
+                  "const cashierId   = parseInt(pm.collectionVariables.get('qr_cashier_id')   || '1', 10);",
+                  "const expiredTime = parseInt(pm.collectionVariables.get('qr_expired_time') || '60', 10);",
+                  "const fareIdsRaw  =          pm.collectionVariables.get('qr_fare_ids')     || '1,2';",
+                  "const fareIds     = fareIdsRaw.split(',').map(s => parseInt(s.trim(), 10));",
+                  "",
+                  "const VERSION  = 1;",
+                  "const datetime = Math.floor(Date.now() / 1000);",
+                  "",
+                  "function u8(v)  { return [v & 0xFF]; }",
+                  "function u16(v) { return [(v >> 8) & 0xFF, v & 0xFF]; }",
+                  "function u32(v) { return [(v >>> 24) & 0xFF, (v >>> 16) & 0xFF, (v >>> 8) & 0xFF, v & 0xFF]; }",
+                  "function toHex(arr) { return arr.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase(); }",
+                  "",
+                  "if (qrCount < 1 || qrCount > 65535) throw new Error('qr_count debe estar entre 1 y 65535');",
+                  "",
+                  "// count uint16 BE (2 bytes) -> hasta 65,535 QRs",
+                  "const bytes = [...u16(qrCount)];",
+                  "const nonces = [];",
+                  "for (let i = 0; i < qrCount; i++) {",
+                  "    const fareId = fareIds[i % fareIds.length];",
+                  "    const nonce  = Math.floor(Math.random() * 0x10000);",
+                  "    bytes.push(...u8(VERSION), ...u32(datetime + i), ...u16(cashierId), ...u16(fareId), ...u16(expiredTime), ...u16(nonce));",
+                  "    nonces.push(nonce.toString(16).padStart(4, '0'));",
+                  "}",
+                  "",
+                  "const tokenHex = toHex(bytes);",
+                  "pm.collectionVariables.set('token_multi_qr', tokenHex);",
+                  "pm.collectionVariables.set('dat_now', String(datetime));",
+                  "",
+                  "console.log('--- Multi-QR encoder (count uint16) ---');",
+                  "console.log('count       :', qrCount);",
+                  "console.log('total bytes :', bytes.length, '(hex chars: ' + tokenHex.length + ')');",
+                  "console.log('nonces      :', nonces.slice(0, 10).join(','), nonces.length > 10 ? '... (' + nonces.length + ' total)' : '');",
+                  "console.log('token hex   :', tokenHex.length > 200 ? tokenHex.substring(0, 200) + '...' : tokenHex);",
+                  "console.log('dat (envio) :', datetime);"
+                ]
+              },
+              "listen": "prerequest"
+            },
+            {
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Response shape: { success: true, message: 'batch exitoso', data: { qr_codes, type_code, dat } }",
+                  "",
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('Response envelope: success + message + data', () => {",
+                  "    pm.expect(body).to.have.property('success', true);",
+                  "    pm.expect(body).to.have.property('message', 'batch exitoso');",
+                  "    pm.expect(body).to.have.property('data').that.is.an('object');",
+                  "});",
+                  "",
+                  "const data = body.data;",
+                  "",
+                  "pm.test('data: { qr_codes: array, type_code: string, dat: string }', () => {",
+                  "    pm.expect(data).to.have.property('qr_codes').that.is.an('array');",
+                  "    pm.expect(data).to.have.property('type_code').that.is.a('string');",
+                  "    pm.expect(data).to.have.property('dat').that.is.a('string');",
+                  "});",
+                  "",
+                  "pm.test('data.type_code == RC170', () => {",
+                  "    pm.expect(data.type_code).to.equal('RC170');",
+                  "});",
+                  "",
+                  "pm.test('data.dat == dat_now enviado', () => {",
+                  "    pm.expect(data.dat).to.equal(pm.collectionVariables.get('dat_now'));",
+                  "});",
+                  "",
+                  "const expectedCount = parseInt(pm.collectionVariables.get('qr_count') || '1', 10);",
+                  "pm.test(`data.qr_codes.length == qr_count (${expectedCount})`, () => {",
+                  "    pm.expect(data.qr_codes).to.have.lengthOf(expectedCount);",
+                  "});",
+                  "",
+                  "pm.test('cada qr_code es hex lowercase 26 chars', () => {",
+                  "    data.qr_codes.forEach((t, i) => {",
+                  "        pm.expect(t, `qr_codes[${i}]`).to.be.a('string').with.lengthOf(26);",
+                  "        pm.expect(t).to.match(/^[0-9a-f]{26}$/);",
+                  "    });",
+                  "});",
+                  "",
+                  "pm.test('qr_codes son unicos en el bundle (sin duplicados)', () => {",
+                  "    pm.expect(new Set(data.qr_codes).size).to.eql(data.qr_codes.length);",
+                  "});",
+                  "",
+                  "pm.test('cada qr_code arranca con version 01 (v=1)', () => {",
+                  "    data.qr_codes.forEach((t, i) => {",
+                  "        pm.expect(t.substring(0, 2), `qr_codes[${i}].version`).to.equal('01');",
+                  "    });",
+                  "});",
+                  "",
+                  "// === Decoder helper para auditoria visual ===",
+                  "function decodeQrHex(hex26) {",
+                  "    const bytes = new Uint8Array(hex26.match(/.{2}/g).map(h => parseInt(h, 16)));",
+                  "    const view  = new DataView(bytes.buffer);",
+                  "    return {",
+                  "        version:      view.getUint8(0),",
+                  "        datetime:     view.getUint32(1, false),",
+                  "        cashier_id:   view.getUint16(5, false),",
+                  "        fare_id:      view.getUint16(7, false),",
+                  "        expired_time: view.getUint16(9, false),",
+                  "        nonce:        '0x' + view.getUint16(11, false).toString(16),",
+                  "    };",
+                  "}",
+                  "",
+                  "console.log(`--- ${data.qr_codes.length} QR codes vendidos (type_code=${data.type_code}, dat=${data.dat}) ---`);",
+                  "data.qr_codes.slice(0, 10).forEach((t, i) => {",
+                  "    console.log(`  [${i+1}] ${t} -> `, JSON.stringify(decodeQrHex(t)));",
+                  "});",
+                  "if (data.qr_codes.length > 10) console.log(`  ... (${data.qr_codes.length - 10} mas)`);"
+                ]
+              },
+              "listen": "test"
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cashier_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type_code\": \"RC170\",\n  \"token\": \"{{token_multi_qr}}\",\n  \"dat\": \"{{dat_now}}\",\n  \"lat\": \"4.7110\",\n  \"lon\": \"-74.0721\",\n  \"hw\": \"POS-A1\",\n  \"ime\": \"VAL_POSTMAN_001\",\n  \"employee_full_name\": \"POSTMAN TEST\",\n  \"typ\": \"RC170\",\n  \"ver\": \"1.0.0\",\n  \"route\": {\n    \"id\": 2,\n    \"route_short_name\": \"R-TUR\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pos-transactions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pos-transactions"
+              ]
+            },
+            "description": "Vende N QRs en una sola operacion atomica (replica gateway purchase para una red de recarga).\n\n**Auth**: requiere `{{cashier_token}}` (sanctum del cashier).\n\n## Modelo de negocio\n\n```\nRed de recarga (cashier's company)  --- compra N QRs --->  Provider (product's company)\n        |                                                          |\n   sender.card (debit total)                          receiver.card (credit total)\n```\n\nPrecio = `fare.value`. Receiver = `fare.product.company_id`.\n\n## Spec del token (v=1)\n\n```\n[count: 2B uint16 BE] + N x [QR de 13B]\n\nCada QR (BE):\n  version(1B) + datetime(4B) + cashier_id(2B) + fare_id(2B) + expired_time(2B) + nonce(2B)\n```\n\n- `count` ahora es **uint16 BE** -> hasta 65,535 QRs por bundle (necesario para cierre de caja RC172 con miles de tramas).\n- Total bytes = 2 + N×13. Hex chars = bytes × 2.\n- `expired_time` se ignora hoy (reservado).\n- `cashier_id` del QR es solo auditoria (el real sale del Auth).\n\n## Variables de la coleccion\n\n| Variable | Default | Uso |\n|---|---|---|\n| `qr_count` | 10 | cuantos QRs vender (1..65535) |\n| `qr_cashier_id` | 1 | cashier_id que va dentro del QR (audit) |\n| `qr_fare_ids` | `1,2,3,4,5,6` | CSV de fare_ids. Cicla si N > len |\n| `qr_expired_time` | 60 | TTL en segundos (se ignora) |\n\n## Response\n\n```json\n{\n  \"success\": true,\n  \"message\": \"batch exitoso\",\n  \"data\": {\n    \"qr_codes\": [\"016a115ec600010001003cf4c2\", \"016a115ec700010002003c1449\", ...],\n    \"type_code\": \"RC170\",\n    \"dat\": \"1779525392\"\n  }\n}\n```\n\n`data.qr_codes` es el array de hexes individuales (uno por QR del bundle). Cada hex se puede decodear con DataView para obtener fare_id, datetime, nonce, etc., o JOINear con `q_r_codes.token` para FKs.\n\n## Persistencia en BD por POST RC170\n\n| Tabla | Cantidad por bundle de N QRs |\n|---|---|\n| `pos_transactions` | **1 fila padre** (con `token` + `qr_codes` JSONB) |\n| `q_r_codes` | N |\n| `transactions` | 2N (sender debit + receiver credit por QR) |\n| `reserve_money_cards` | N |\n| `sale_records` | N |\n| `purchases` | N |\n| `cards` (updates) | 1 sender + 1 por receiver unico (no N) |\n\n`pos_transactions.plot_id = bundleHex + dat` (convencion RC110).\n\n## Idempotencia\n\n`q_r_codes.token` UNIQUE -> re-enviar el mismo bundle -> 409 con rollback total.\n\n## Ejemplo concreto (1 QR)\n\nInput:\n- datetime=1779425200, cashier_id=1, fare_id=1, expired_time=60, nonce=0xa3f8\n\nBytes:\n- count=0x0001 (2B uint16 BE)\n- QR=`01 6A0FBA30 0001 0001 003C A3F8` (13B)\n\nToken final: `0001016A0FBA3000010001003CA3F8` (30 hex chars)."
+          },
+          "response": []
+        },
+        {
+          "name": "Decode token (RC170)",
+          "event": [
+            {
+              "script": {
+                "exec": [
+                  "// Genera un token multi-QR fresco para enviar al decode-token.",
+                  "// Misma logica que el request Create — para que este endpoint sea",
+                  "// auto-suficiente y no dependa de haber corrido Create antes.",
+                  "//",
+                  "// Formato actual: [count: 2B uint16 BE] + N x [QR 13B]",
+                  "// (bump uint8 -> uint16 hecho junto con RC172 cierre de caja).",
+                  "//",
+                  "// Si querés decodear un token externo, comentá este pre-request",
+                  "// y hardcodea el valor en el body.",
+                  "",
+                  "const qrCount     = parseInt(pm.collectionVariables.get('qr_count')        || '1', 10);",
+                  "const cashierId   = parseInt(pm.collectionVariables.get('qr_cashier_id')   || '1', 10);",
+                  "const expiredTime = parseInt(pm.collectionVariables.get('qr_expired_time') || '60', 10);",
+                  "const fareIdsRaw  =          pm.collectionVariables.get('qr_fare_ids')     || '1,2';",
+                  "const fareIds     = fareIdsRaw.split(',').map(s => parseInt(s.trim(), 10));",
+                  "",
+                  "const VERSION  = 1;",
+                  "const datetime = Math.floor(Date.now() / 1000);",
+                  "",
+                  "function u8(v)  { return [v & 0xFF]; }",
+                  "function u16(v) { return [(v >> 8) & 0xFF, v & 0xFF]; }",
+                  "function u32(v) { return [(v >>> 24) & 0xFF, (v >>> 16) & 0xFF, (v >>> 8) & 0xFF, v & 0xFF]; }",
+                  "function toHex(arr) { return arr.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase(); }",
+                  "",
+                  "if (qrCount < 1 || qrCount > 65535) {",
+                  "    throw new Error('qr_count debe estar entre 1 y 65535, recibido: ' + qrCount);",
+                  "}",
+                  "",
+                  "const bytes = [...u16(qrCount)];",
+                  "",
+                  "for (let i = 0; i < qrCount; i++) {",
+                  "    const fareId = fareIds[i % fareIds.length];",
+                  "    const nonce  = Math.floor(Math.random() * 0x10000);",
+                  "    const qrDate = datetime + i;",
+                  "",
+                  "    bytes.push(...u8(VERSION));",
+                  "    bytes.push(...u32(qrDate));",
+                  "    bytes.push(...u16(cashierId));",
+                  "    bytes.push(...u16(fareId));",
+                  "    bytes.push(...u16(expiredTime));",
+                  "    bytes.push(...u16(nonce));",
+                  "}",
+                  "",
+                  "const tokenHex = toHex(bytes);",
+                  "pm.collectionVariables.set('token_multi_qr', tokenHex);",
+                  "",
+                  "console.log('--- Decode preview ---');",
+                  "console.log('count        :', qrCount);",
+                  "console.log('bundle bytes :', bytes.length, '(2 count + ' + qrCount + ' x 13 QR)');",
+                  "console.log('token hex    :', tokenHex);"
+                ],
+                "type": "text/javascript"
+              },
+              "listen": "prerequest"
+            },
+            {
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('Response tiene `data` (array) y `count`', () => {",
+                  "    pm.expect(body).to.have.property('data').that.is.an('array');",
+                  "    pm.expect(body).to.have.property('count').that.is.a('number');",
+                  "    pm.expect(body.count).to.eql(body.data.length);",
+                  "});",
+                  "",
+                  "pm.test('cada QR tiene los campos esperados', () => {",
+                  "    body.data.forEach((qr, i) => {",
+                  "        ['version', 'datetime', 'cashier_id', 'fare_id', 'expired_time', 'nonce', 'token_qr'].forEach(f => {",
+                  "            pm.expect(qr, 'qr[' + i + '].' + f).to.have.property(f);",
+                  "        });",
+                  "        pm.expect(qr.token_qr).to.match(/^[0-9a-f]{26}$/);",
+                  "    });",
+                  "});",
+                  "",
+                  "pm.test('fare_name y value_cents enriched cuando fare existe', () => {",
+                  "    body.data.forEach((qr, i) => {",
+                  "        if (qr.fare_name !== null) {",
+                  "            pm.expect(qr.value_cents, 'qr[' + i + '].value_cents').to.be.a('number').above(0);",
+                  "        }",
+                  "    });",
+                  "});",
+                  "",
+                  "console.log('--- Decoded QRs ---');",
+                  "body.data.forEach((qr, i) => {",
+                  "    console.log('QR #' + (i+1) + ':', JSON.stringify(qr));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              },
+              "listen": "test"
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cashier_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "value": "application/json",
+                "key": "Content-Type"
+              },
+              {
+                "value": "application/json",
+                "key": "Accept"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{token_multi_qr}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pos-transactions/decode-token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pos-transactions",
+                "decode-token"
+              ]
+            },
+            "description": "Decodifica un token multi-QR SIN persistir nada. Util para preview/debug y validar el contenido del bundle antes de hacer el POST de creacion.\n\n**Endpoint**: `POST /api/pos-transactions/decode-token`\n\n**Body**:\n```json\n{ \"token\": \"<hex string del multi-QR>\" }\n```\n\n**Response**:\n```json\n{\n  \"data\": [\n    {\n      \"version\": 1,\n      \"datetime\": 1779415600,\n      \"cashier_id\": 1,\n      \"fare_id\": 1,\n      \"fare_name\": \"Adulto dia\",\n      \"value_cents\": 250000,\n      \"expired_time\": 60,\n      \"nonce\": 41976,\n      \"token_qr\": \"016a0fba3000010001003ca3f8\"\n    },\n    ...\n  ],\n  \"count\": 2\n}\n```\n\n`fare_name` y `value_cents` los resuelve el server consultando `fares` por `fare_id`. Si la fare no existe, ambos quedan `null` pero el resto del QR se decodifica igual.\n\n**Auth**: requiere `{{cashier_token}}`.\n\n**Notas**:\n\n- Para usar el mismo `token` que genera el pre-request del POST de creacion, ejecuta primero \"Create pos_transaction (RC170)\" (aunque el response sea 201). Eso setea la variable `{{token_multi_qr}}` que este request reusa.\n- O bien, hardcodea un token hex en el body y le pegas Send."
+          },
+          "response": []
+        },
+        {
+          "name": "Open cash register (RC171)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// RC171 solo lleva metadata. dat = unix timestamp de apertura.",
+                  "pm.collectionVariables.set('dat_now', String(Math.floor(Date.now() / 1000)));"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('Response envelope', () => {",
+                  "    pm.expect(body).to.have.property('success', true);",
+                  "    pm.expect(body).to.have.property('message', 'apertura exitosa');",
+                  "    pm.expect(body).to.have.property('data').that.is.an('object');",
+                  "});",
+                  "",
+                  "const data = body.data;",
+                  "",
+                  "pm.test('data tiene session_id, opened_at, type_code=RC171, dat', () => {",
+                  "    pm.expect(data.session_id).to.be.a('number');",
+                  "    pm.expect(data.opened_at).to.be.a('string');",
+                  "    pm.expect(data.type_code).to.equal('RC171');",
+                  "    pm.expect(data.dat).to.equal(pm.collectionVariables.get('dat_now'));",
+                  "});",
+                  "",
+                  "// Guardar session_id para usarlo despues si quieren consultar",
+                  "pm.collectionVariables.set('active_session_id', String(data.session_id));",
+                  "",
+                  "console.log('--- Session abierta ---');",
+                  "console.log('  session_id :', data.session_id);",
+                  "console.log('  opened_at  :', data.opened_at);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cashier_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "value": "application/json",
+                "key": "Content-Type"
+              },
+              {
+                "value": "application/json",
+                "key": "Accept"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type_code\": \"RC171\",\n  \"token\": null,\n  \"dat\": \"{{dat_now}}\",\n  \"lat\": \"4.7110\",\n  \"lon\": \"-74.0721\",\n  \"hw\": \"POS-A1\",\n  \"ime\": \"VAL_POSTMAN_001\",\n  \"employee_full_name\": \"POSTMAN TEST\",\n  \"typ\": \"RC171\",\n  \"ver\": \"1.0.0\",\n  \"route\": {\n    \"id\": 2,\n    \"route_short_name\": \"R-TUR\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pos-transactions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pos-transactions"
+              ]
+            },
+            "description": "Abre una session de caja del cashier autenticado.\n\n**RC171 NO lleva token** — es solo metadata. La session permanece `open` hasta que llegue un RC172.\n\n## Invariantes\n\n- Un cashier solo puede tener UNA session `open` a la vez. Si ya hay una abierta -> 409 con \"Cerrarla con RC172 antes de abrir nueva\".\n- Solo el cashier autenticado abre su session (Auth -> cashier via user_id).\n- BD enforces UNIQUE partial: `cash_register_sessions(cashier_id) WHERE status='open'`.\n\n## Body\n\n```json\n{\n  \"type_code\": \"RC171\",\n  \"dat\": \"<unix ts del envio>\",\n  \"lat\", \"lon\",                 // geolocalizacion apertura\n  \"hw\", \"ime\",                  // device info\n  \"employee_full_name\",         // cashier humano\n  \"ver\"                         // firmware del POS\n}\n```\n\nNO se envia `token`.\n\n## Response\n\n```json\n{\n  \"success\": true,\n  \"message\": \"apertura exitosa\",\n  \"data\": {\n    \"session_id\": 42,\n    \"opened_at\": \"2026-05-23T16:27:51+00:00\",\n    \"type_code\": \"RC171\",\n    \"dat\": \"1779553671\"\n  }\n}\n```\n\n## Lo que se crea en BD\n\n- 1 fila en `cash_register_sessions` con `status='open'`, `cashier_id`, `opening_pos_transaction_id`, `opened_at`, snapshot de location/device\n- 1 fila en `pos_transactions` con `type_id=RC171`, `token=null`, `session_id` auto-linkeado\n\n## Siguiente paso\n\nUna vez abierta la session, los RC170 del mismo cashier se asocian a esta session via `pos_transactions.session_id`. Cuando termine el turno, mandar RC172 con el batch completo."
+          },
+          "response": []
+        },
+        {
+          "name": "Close cash register V2 - binario (RC172)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Genera el token multi-QR para el batch de cierre.",
+                  "// Mismo formato que RC170: [count uint16 BE] + N x [QR 13B].",
+                  "// IMPORTANTE: cada qr.cashier_id debe matchear el cashier autenticado (validacion estricta).",
+                  "",
+                  "const qrCount     = parseInt(pm.collectionVariables.get('qr_count')        || '1', 10);",
+                  "const cashierId   = parseInt(pm.collectionVariables.get('qr_cashier_id')   || '1', 10);",
+                  "const expiredTime = parseInt(pm.collectionVariables.get('qr_expired_time') || '60', 10);",
+                  "const fareIdsRaw  =          pm.collectionVariables.get('qr_fare_ids')     || '1,2';",
+                  "const fareIds     = fareIdsRaw.split(',').map(s => parseInt(s.trim(), 10));",
+                  "",
+                  "const VERSION = 1;",
+                  "const datetime = Math.floor(Date.now() / 1000);",
+                  "",
+                  "function u8(v)  { return [v & 0xFF]; }",
+                  "function u16(v) { return [(v >> 8) & 0xFF, v & 0xFF]; }",
+                  "function u32(v) { return [(v >>> 24) & 0xFF, (v >>> 16) & 0xFF, (v >>> 8) & 0xFF, v & 0xFF]; }",
+                  "function toHex(arr) { return arr.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase(); }",
+                  "",
+                  "if (qrCount < 1 || qrCount > 65535) throw new Error('qr_count debe estar entre 1 y 65535');",
+                  "",
+                  "const bytes = [...u16(qrCount)];",
+                  "for (let i = 0; i < qrCount; i++) {",
+                  "    const fareId = fareIds[i % fareIds.length];",
+                  "    const nonce  = Math.floor(Math.random() * 0x10000);",
+                  "    bytes.push(...u8(VERSION), ...u32(datetime + i), ...u16(cashierId), ...u16(fareId), ...u16(expiredTime), ...u16(nonce));",
+                  "}",
+                  "",
+                  "const tokenHex = toHex(bytes);",
+                  "pm.collectionVariables.set('token_multi_qr', tokenHex);",
+                  "pm.collectionVariables.set('dat_now', String(datetime));",
+                  "",
+                  "console.log('--- RC172 close encoder ---');",
+                  "console.log('qr_count    :', qrCount);",
+                  "console.log('total bytes :', bytes.length);",
+                  "console.log('token hex   :', tokenHex.length > 200 ? tokenHex.substring(0, 200) + '...' : tokenHex);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const data = body.data;",
+                  "",
+                  "pm.test('Response envelope: success + message=cierre exitoso + data', () => {",
+                  "    pm.expect(body).to.have.property('success', true);",
+                  "    pm.expect(body).to.have.property('message', 'cierre exitoso');",
+                  "    pm.expect(body).to.have.property('data').that.is.an('object');",
+                  "});",
+                  "",
+                  "pm.test('data: session_id, closed_at, type_code=RC172, dat, qr_codes, totals, reconciliation', () => {",
+                  "    pm.expect(data.session_id).to.be.a('number');",
+                  "    pm.expect(data.closed_at).to.be.a('string');",
+                  "    pm.expect(data.type_code).to.equal('RC172');",
+                  "    pm.expect(data.dat).to.equal(pm.collectionVariables.get('dat_now'));",
+                  "    pm.expect(data.qr_codes).to.be.an('array');",
+                  "    pm.expect(data.totals).to.be.an('object');",
+                  "    pm.expect(data.reconciliation).to.be.an('object');",
+                  "});",
+                  "",
+                  "const expectedCount = parseInt(pm.collectionVariables.get('qr_count') || '1', 10);",
+                  "pm.test(`qr_codes.length == qr_count (${expectedCount})`, () => {",
+                  "    pm.expect(data.qr_codes).to.have.lengthOf(expectedCount);",
+                  "});",
+                  "",
+                  "pm.test('totals coherentes', () => {",
+                  "    pm.expect(data.totals.total_qrs).to.equal(data.qr_codes.length);",
+                  "    pm.expect(data.totals.total_amount).to.be.a('number').at.least(0);",
+                  "    pm.expect(data.totals.catch_up_charged).to.be.a('number').at.least(0);",
+                  "});",
+                  "",
+                  "pm.test('reconciliation: existing + created == total_qrs', () => {",
+                  "    pm.expect(data.reconciliation.existing + data.reconciliation.created).to.equal(data.totals.total_qrs);",
+                  "});",
+                  "",
+                  "console.log('--- Session cerrada ---');",
+                  "console.log('  session_id     :', data.session_id);",
+                  "console.log('  closed_at      :', data.closed_at);",
+                  "console.log('  total_qrs      :', data.totals.total_qrs);",
+                  "console.log('  total_amount   :', data.totals.total_amount);",
+                  "console.log('  catch_up       :', data.totals.catch_up_charged);",
+                  "console.log('  reconciliation :', JSON.stringify(data.reconciliation));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cashier_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "value": "application/json",
+                "key": "Content-Type"
+              },
+              {
+                "value": "application/json",
+                "key": "Accept"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type_code\": \"RC172\",\n  \"token\": \"{{token_multi_qr}}\",\n  \"dat\": \"{{dat_now}}\",\n  \"lat\": \"4.7110\",\n  \"lon\": \"-74.0721\",\n  \"hw\": \"POS-A1\",\n  \"ime\": \"VAL_POSTMAN_001\",\n  \"employee_full_name\": \"POSTMAN TEST\",\n  \"typ\": \"RC172\",\n  \"ver\": \"1.0.0\",\n  \"route\": {\n    \"id\": 2,\n    \"route_short_name\": \"R-TUR\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pos-transactions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pos-transactions"
+              ]
+            },
+            "description": "> **Existen 2 versiones de RC172 que comparten el mismo endpoint** (`POST /api/pos-transactions` con `type_code=RC172`). El server detecta automáticamente cuál procesar según el formato del `token`:\n> - **v2 (este request)**: token binario hex sin comas (`0001016a...`). Requiere session abierta + valida cashier per-QR + catch-up de QRs faltantes.\n> - **v1**: token CSV con comas (`hex1,hex2,hex3`). Sin session ni cashier check. Ver request `Close cash register V1 - CSV (RC172)`.\n\n---\n\n# RC172 v2 — Cierre de caja (binario multi-QR)\n\nCierra la session abierta del cashier y procesa el batch del turno.\n\nEl `token` lleva el **batch multi-QR** de todas las ventas hechas durante la session (mismo formato que RC170: count uint16 + N×13B). Para cada QR del batch:\n- Si ya existe en `q_r_codes` (RC170 previo procesado) -> reconciliated, count en `existing`.\n- Si NO existe -> catch-up: se crea el chain completo (q_r_codes + reserves + 2 transactions + sale_record + purchase) como en RC170.\n\n## Validaciones\n\n- Debe haber session abierta del cashier autenticado (sino 409).\n- Cada `qr.cashier_id` del binario debe matchear `Auth->cashier->id` (estricto, sino 422).\n\n## Spec del token\n\nIdentico a RC170: `[count: 2B uint16 BE] + N × [QR de 13B]`. Soporta hasta 65,535 QRs por bundle.\n\n## Response\n\n```json\n{\n  \"success\": true,\n  \"message\": \"cierre exitoso\",\n  \"data\": {\n    \"session_id\": 42,\n    \"closed_at\": \"2026-05-23T18:00:00+00:00\",\n    \"type_code\": \"RC172\",\n    \"dat\": \"1779562800\",\n    \"qr_codes\": [\"016a...\", \"017b...\", ...],\n    \"totals\": {\n      \"total_qrs\": 50,\n      \"total_amount\": 250000,        // sum de TODOS los QRs (existing + new)\n      \"catch_up_charged\": 12000      // solo lo que se movio en catch-up\n    },\n    \"reconciliation\": {\n      \"existing\": 48,                // ya estaban en q_r_codes (RC170 procesados)\n      \"created\": 2                   // se crearon ahora (offline catch-up)\n    }\n  }\n}\n```\n\n## DB state al cerrar\n\n- `cash_register_sessions.status = closed`\n- `cash_register_sessions.closing_pos_transaction_id` = la RC172 row\n- `cash_register_sessions.closed_at` = `dat` del POST\n- `cash_register_sessions.closing_total_qrs` = count del batch\n- `cash_register_sessions.closing_total_amount` = sum amounts (en cents)\n- `cash_register_sessions.reconciliation_*` = existing/created counts\n\n## Heads-up\n\n- Despues del cierre, RC170 con QRs de esta session daria UNIQUE violation en `q_r_codes.token` (idempotente).\n- Para abrir caja nueva, mandar RC171 (este endpoint).\n- Si necesitás cerrar sin session (caso gateway purchases), usar el request hermano `Close cash register V1 - CSV (RC172)`."
+          },
+          "response": []
+        },
+        {
+          "name": "Close cash register V1 - CSV (RC172)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// dat_now: timestamp unix actual (segundos) por si no estaba seteado",
+                  "if (!pm.collectionVariables.get('dat_now')) {",
+                  "    pm.collectionVariables.set('dat_now', String(Math.floor(Date.now() / 1000)));",
+                  "}",
+                  "",
+                  "// Si no hay tokens CSV cargados, hacemos un fetch a la BD via /api endpoint",
+                  "// (no existe un endpoint dedicado; el operador debe cargar manualmente).",
+                  "// Como fallback poner placeholder claro.",
+                  "if (!pm.collectionVariables.get('rc172_v1_csv_tokens')) {",
+                  "    const placeholder = 'PEGAR_AQUI_LOS_HEX_TOKENS_SEPARADOS_POR_COMA';",
+                  "    pm.collectionVariables.set('rc172_v1_csv_tokens', placeholder);",
+                  "    console.warn('Variable rc172_v1_csv_tokens no estaba seteada. Usar gateway/v2/purchases primero para generar QRs y luego pegar sus tokens en la variable.');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('data tiene version=v1', () => {",
+                  "    pm.expect(body.data).to.have.property('version').that.eqls('v1');",
+                  "    pm.expect(body.data).to.have.property('sent');",
+                  "    pm.expect(body.data).to.have.property('found');",
+                  "    pm.expect(body.data).to.have.property('missing');",
+                  "    pm.expect(body.data).to.have.property('missing_tokens').that.is.an('array');",
+                  "    pm.expect(body.data).to.have.property('qr_codes').that.is.an('array');",
+                  "});",
+                  "console.log('--- RC172 v1 ---');",
+                  "console.log('pos_tx id   :', body.data.pos_transaction_id);",
+                  "console.log('sent        :', body.data.sent);",
+                  "console.log('found       :', body.data.found);",
+                  "console.log('missing     :', body.data.missing);",
+                  "if (body.data.missing > 0) {",
+                  "    console.log('missing tokens:', body.data.missing_tokens);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type_code\": \"RC172\",\n  \"token\": \"fab539a16023ec67f4d089dabad84f6a1b02afe3,0ba17fb304e636df86d03e68bb526920b7259740,d011ba32d3806fbc360b535e1d8043b21bfe8055\",\n  \"dat\": \"{{dat_now}}\",\n  \"lat\": \"4.7110\",\n  \"lon\": \"-74.0721\",\n  \"hw\": \"POS-A1\",\n  \"ime\": \"VAL_POSTMAN_001\",\n  \"employee_full_name\": \"POSTMAN TEST\",\n  \"typ\": \"RC172\",\n  \"ver\": \"1.0.0\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pos-transactions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pos-transactions"
+              ]
+            },
+            "description": "# RC172 v1 — Cierre de caja (formato CSV simple)\n\n**Comparte el endpoint con RC172 v2 (binario)**. El server detecta la versión automáticamente:\n- Si `token` contiene **comas** → v1 (CSV de hex tokens de 40 chars de gateway/v2/purchases)\n- Si no → v2 (binario multi-QR del POS)\n\n## Cuándo usar v1\n\n- Cuando los QRs vienen del flujo `POST /gateway/v2/purchases` (cada uno es un SHA1 de 40 hex chars)\n- Cuando NO se requiere caja abierta (no usa `cash_register_sessions`)\n- Cuando NO querés validar que los QRs sean del cashier autenticado\n\n## Body\n\n```json\n{\n  \"type_code\": \"RC172\",\n  \"token\": \"fab539a16...,0ba17fb30...,d011ba32d...\",  // CSV de hex tokens\n  \"dat\": \"1779999999\",\n  \"lat\": \"4.7110\",\n  \"lon\": \"-74.0721\",\n  ...\n}\n```\n\n`token` es **CSV** (separados por coma). El server hace:\n1. Split + trim + dedupe\n2. Query `q_r_codes WHERE token IN (...)` para contar matches\n3. Persiste `pos_transactions` con type=RC172 y token=CSV normalizado\n4. Retorna counts + lista de missing\n\n## Auth\n\nPuede ser **admin** (`{{admin_token}}`) o **cashier** (`{{cashier_token}}`). El v1 no exige cashier — si está autenticado, persiste el `cashier_id`; si no, queda NULL.\n\n## Response 201 esperado\n\n```json\n{\n  \"success\": true,\n  \"message\": \"cierre v1 procesado: 7 enviados, 5 validados, 2 faltantes\",\n  \"data\": {\n    \"version\": \"v1\",\n    \"pos_transaction_id\": 50,\n    \"type_code\": \"RC172\",\n    \"dat\": \"1779999999\",\n    \"sent\": 7,\n    \"found\": 5,\n    \"missing\": 2,\n    \"missing_tokens\": [\"aaaa...\", \"bbbb...\"],\n    \"qr_codes\": [\"fab539...\", \"0ba17f...\", ...]\n  }\n}\n```\n\n## Diferencia clave con v2 (binario)\n\n| | v1 (CSV) | v2 (binario) |\n|---|---|---|\n| Token format | `hex1,hex2,hex3` | `[count uint16] + N × [QR 13B]` hex |\n| Hex length por QR | 40 (SHA1 gateway) | 26 (estructura POS) |\n| Session check | ❌ no | ✅ requiere abierta |\n| Cashier per-QR | ❌ no | ✅ valida |\n| QR missing | reporta como `missing_tokens` | catch-up: crea chain |\n\n## Variable `{{rc172_v1_csv_tokens}}`\n\nDefinida en la colección. Pre-request la setea con los últimos QR codes generados por gateway purchase. Podés sobrescribirla manualmente con un CSV de hex tokens reales."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Gateway",
+      "item": [
+        {
+          "name": "Products v2 (cashier auth)",
+          "event": [
+            {
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('Response tiene data array y meta', () => {",
+                  "    pm.expect(body).to.have.property('data').that.is.an('array');",
+                  "    pm.expect(body).to.have.property('meta');",
+                  "});",
+                  "",
+                  "pm.test('cada producto tiene campos esperados', () => {",
+                  "    body.data.forEach((p, i) => {",
+                  "        ['_id', 'id', 'value', 'product_name', 'product_description', 'product_company_business_name'].forEach(f => {",
+                  "            pm.expect(p, 'data[' + i + '].' + f).to.have.property(f);",
+                  "        });",
+                  "    });",
+                  "});",
+                  "",
+                  "// Setea el _id del primer producto en una variable para que el request de purchase v2 lo use.",
+                  "if (body.data.length > 0) {",
+                  "    pm.collectionVariables.set('gateway_v2_product_id', body.data[0]._id);",
+                  "    console.log('--- primer producto ---');",
+                  "    console.log('_id  :', body.data[0]._id);",
+                  "    console.log('name :', body.data[0].product_name);",
+                  "    console.log('value:', body.data[0].value);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              },
+              "listen": "test"
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cashier_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "value": "application/json",
+                "key": "Accept"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/gateway/v2/products?per_page=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "gateway",
+                "v2",
+                "products"
+              ],
+              "query": [
+                {
+                  "value": "20",
+                  "key": "per_page"
+                }
+              ]
+            },
+            "description": "**v2 del listado de productos del gateway.**\n\nEndpoint: `GET /api/gateway/v2/products`\n\nDiferencia con v1: requiere que el `Auth::user()` sea cashier activo con `branch_id`. La query a Mongo es identica a v1 (categoria TRANSPORTE PUBLICO, status=1, paginado).\n\n**Auth**: `{{cashier_token}}` (obtenelo con el request `Login cashier`).\n\n**Errores esperados**:\n- `401 not_authenticated` — sin token\n- `403 not_a_cashier` — token de un user que no es cashier activo\n- `403 cashier_missing_branch` — cashier sin branch asignada\n\n**Response 200** (paginated):\n```json\n{\n  \"data\": [\n    {\n      \"_id\": \"6a1166b2...\",\n      \"id\": 2,\n      \"value\": 2500,\n      \"product_name\": \"Pasaje Adulto\",\n      \"product_description\": \"Tarifa estandar\",\n      \"product_company_business_name\": \"...\",\n      \"product_company_logo\": \"...\"\n    }\n  ],\n  \"links\": {...},\n  \"meta\": {...}\n}\n```\n\nv1 sigue funcionando intacto en `/api/gateway/v1/products` (no requiere cashier)."
+          },
+          "response": []
+        },
+        {
+          "name": "Purchase v2 (cashier auth)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('Response tiene data con campos esperados', () => {",
+                  "    pm.expect(body).to.have.property('data');",
+                  "    ['qr_code', 'your_new_balance', 'transaction_id', 'transfer_amount', 'product'].forEach(f => {",
+                  "        pm.expect(body.data, 'data.' + f).to.have.property(f);",
+                  "    });",
+                  "});",
+                  "",
+                  "console.log('--- purchase v2 ---');",
+                  "console.log('qr_code      :', body.data.qr_code);",
+                  "console.log('new balance  :', body.data.your_new_balance);",
+                  "console.log('transfer amt :', body.data.transfer_amount);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cashier_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": \"{{gateway_v2_product_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/gateway/v2/purchases",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "gateway",
+                "v2",
+                "purchases"
+              ]
+            },
+            "description": "**v2 del purchase del gateway** (compra de un QR de transporte).\n\nEndpoint: `POST /api/gateway/v2/purchases`\n\nDiferencia con v1: el sender chain (branch/account/card) se resuelve desde `cashier->branch` (no desde `WriteBranch::where(user_id)`). Mismo flujo de debit + chain de transactions + sale_record + purchase.\n\n**NO requiere session abierta** (RC171). Sesion aplica solo a flujo POS-con-caja (RC170/RC171/RC172).\n\n**Body**:\n```json\n{ \"product_id\": \"<_id de un producto del listado>\" }\n```\n\n`gateway_v2_product_id` lo setea automaticamente el request `Products v2` cuando lo corras. Tambien podes hardcodear un `_id` manual.\n\n**Auth**: `{{cashier_token}}`.\n\n**Response 200**:\n```json\n{\n  \"data\": {\n    \"qr_code\": \"abc123...\",\n    \"your_new_balance\": 99751700,\n    \"transaction_id\": \"...\",\n    \"total_amount_after_transfer\": 99751700,\n    \"transfer_amount\": \"2500\",\n    \"transaction_type\": \"TRANSFER-DEBIT\",\n    \"product\": \"Juana **** **** **** 1955\",\n    \"authorization_date\": \"2026-05-24T...\",\n    \"cashier_id\": 1\n  }\n}\n```\n\n`cashier_id` en el response confirma que el sender se resolvio via cashier->branch.\n\n**Errores**:\n- `401 not_authenticated` — sin token\n- `403 not_a_cashier` — user logueado pero no es cashier\n- `403 cashier_missing_branch` — cashier sin branch\n- `422 insufficient_balance` — saldo del sender < precio\n- `422 product_not_found` — product_id no existe en Mongo\n- `422 product_company_missing` — product sin company\n- `422 sender_infrastructure_missing` — branch/account/card del cashier no configurada\n- `422 provider_infrastructure_missing` — branch/account/card de la company del producto no configurada\n\nv1 sigue funcionando intacto en `/api/gateway/v1/purchases` (auth user con branch propia)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Novelties",
+      "item": [
+        {
+          "name": "List novelty types",
+          "event": [
+            {
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('data es array', () => pm.expect(body.data).to.be.an('array'));",
+                  "if (body.data.length > 0) {",
+                  "    pm.collectionVariables.set('last_novelty_type_id', body.data[0].id);",
+                  "    console.log('--- novelty_types ---');",
+                  "    body.data.forEach(t => console.log('  ' + t.id + ': ' + t.name + ' (' + t.icon + ')' + (t.is_active ? '' : ' [INACTIVE]')));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              },
+              "listen": "test"
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cashier_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/novelty-types?is_active=true",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "novelty-types"
+              ],
+              "query": [
+                {
+                  "description": "opcional, filtra solo activos",
+                  "value": "true",
+                  "key": "is_active"
+                }
+              ]
+            },
+            "description": "Lista todos los novelty_types. Auth: cualquier user logueado (admin o cashier).\n\nFiltro opcional `?is_active=true|false`.\n\nResponse:\n```json\n{\n  \"data\": [\n    {\n      \"id\": 1,\n      \"name\": \"Falla de impresora\",\n      \"icon\": \"print_disabled\",\n      \"is_active\": true,\n      \"created_at\": \"2026-05-24T18:00:51+00:00\",\n      \"updated_at\": \"2026-05-24T18:00:51+00:00\"\n    }\n  ]\n}\n```\n\nEl `icon` es un identificador de Material Icons (https://fonts.google.com/icons). Lo usa el POS para renderear el icono.\n\nEl test setea `last_novelty_type_id` con el id del primero, util para encadenar con `Create novelty`."
+          },
+          "response": []
+        },
+        {
+          "name": "Create novelty type (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('data tiene id+name+icon', () => {",
+                  "    pm.expect(body.data).to.have.property('id');",
+                  "    pm.expect(body.data).to.have.property('name');",
+                  "    pm.expect(body.data).to.have.property('icon');",
+                  "});",
+                  "pm.collectionVariables.set('last_novelty_type_id', body.data.id);",
+                  "console.log('created novelty_type:', body.data.id, body.data.name, '(' + body.data.icon + ')');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Falla de impresora\",\n  \"icon\": \"print_disabled\",\n  \"is_active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/novelty-types",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "novelty-types"
+              ]
+            },
+            "description": "Crea un nuevo tipo de novedad. **Solo admin.**\n\n`icon` debe ser un identificador valido de Material Icons (https://fonts.google.com/icons). Ejemplos:\n- `warning`\n- `report_problem`\n- `print_disabled`\n- `error_outline`\n- `payments`\n- `local_atm`\n\n**Auth**: `{{admin_token}}` (obtenelo con `Login admin`).\n\n**Errores**:\n- `401 not_authenticated` — sin token\n- `403 admin_required` — usuario sin rol `administrator`\n- `422` validation — name duplicado, icon vacio"
+          },
+          "response": []
+        },
+        {
+          "name": "Update novelty type (admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "value": "application/json",
+                "key": "Content-Type"
+              },
+              {
+                "value": "application/json",
+                "key": "Accept"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Falla de impresora (actualizado)\",\n  \"icon\": \"print\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/novelty-types/{{last_novelty_type_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "novelty-types",
+                "{{last_novelty_type_id}}"
+              ]
+            },
+            "description": "Actualiza un novelty_type existente. **Solo admin.**\n\nAcepta cualquier subset de `name`, `icon`, `is_active`.\n\n`{{last_novelty_type_id}}` lo setea el request `Create novelty type` o `List novelty types`."
+          },
+          "response": []
+        },
+        {
+          "name": "Soft delete novelty type (admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [
+              {
+                "value": "application/json",
+                "key": "Accept"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/novelty-types/{{last_novelty_type_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "novelty-types",
+                "{{last_novelty_type_id}}"
+              ]
+            },
+            "description": "Soft delete: marca `is_active=false`. Preserva las novelties ya creadas que apuntan a este tipo. **Solo admin.**"
+          },
+          "response": []
+        },
+        {
+          "name": "List novelties (admin/cashier)",
+          "event": [
+            {
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('shape paginated correcto (data + meta + links)', () => {",
+                  "    pm.expect(body).to.have.property('data').that.is.an('array');",
+                  "    pm.expect(body).to.have.property('meta');",
+                  "    pm.expect(body).to.have.property('links');",
+                  "    pm.expect(body.meta).to.have.property('current_page');",
+                  "    pm.expect(body.meta).to.have.property('last_page');",
+                  "    pm.expect(body.meta).to.have.property('total');",
+                  "    pm.expect(body.meta).to.have.property('per_page');",
+                  "});",
+                  "",
+                  "console.log('--- meta ---');",
+                  "console.log('total       :', body.meta.total);",
+                  "console.log('page        :', body.meta.current_page, '/', body.meta.last_page);",
+                  "console.log('per_page    :', body.meta.per_page);",
+                  "console.log('items aqui  :', body.data.length);",
+                  "console.log('--- novelties ---');",
+                  "body.data.forEach((n, i) => {",
+                  "    const cashier = n.cashier ? n.cashier.user_name + ' (id=' + n.cashier_id + ')' : 'cashier=' + n.cashier_id;",
+                  "    console.log('  #' + n.id + ' ' + (n.created_at ? n.created_at.slice(0,10) : '') + ' [' + (n.novelty_type ? n.novelty_type.name : '?') + '] ' + cashier + ' - ' + n.name);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              },
+              "listen": "test"
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cashier_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/novelties?per_page=25",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "novelties"
+              ],
+              "query": [
+                {
+                  "value": "25",
+                  "key": "per_page",
+                  "description": "tamaño de página, default 25, max 200"
+                },
+                {
+                  "value": "1",
+                  "key": "page",
+                  "description": "número de página",
+                  "disabled": true
+                },
+                {
+                  "value": "",
+                  "key": "novelty_type_id",
+                  "description": "filtrar por tipo",
+                  "disabled": true
+                },
+                {
+                  "value": "",
+                  "key": "cashier_id",
+                  "description": "[admin only] filtrar por cashier id",
+                  "disabled": true
+                },
+                {
+                  "value": "",
+                  "key": "from",
+                  "description": "[admin only] fecha desde YYYY-MM-DD",
+                  "disabled": true
+                },
+                {
+                  "value": "",
+                  "key": "to",
+                  "description": "[admin only] fecha hasta YYYY-MM-DD",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Lista paginada de novelties.\n\n**Comportamiento dual según rol del caller:**\n- **Admin** (`hasRole('administrator')`): ve TODAS las novelties. Eager-loadea `cashier.user` para mostrar quien reportó. Soporta filtros adicionales: `cashier_id`, `novelty_type_id`, `from`, `to`.\n- **Cashier**: ve SOLO las propias. Filtro `cashier_id` se ignora (el backend filtra automaticamente por `Auth->cashier`). `novelty_type_id` sí aplica.\n\n**Paginación**: default `per_page=25`, máximo 200. Response trae shape Laravel paginator:\n\n```json\n{\n  \"data\": [...],\n  \"links\": { \"first\": \"...\", \"last\": \"...\", \"prev\": null, \"next\": \"...\" },\n  \"meta\": {\n    \"current_page\": 1, \"from\": 1, \"to\": 25,\n    \"last_page\": 5, \"per_page\": 25, \"total\": 102, \"path\": \"...\"\n  }\n}\n```\n\n**Auth**:\n- Si querés probar como admin: cambia el token bearer a `{{admin_token}}` (default es `{{cashier_token}}`).\n- Cashier sin perfil de cashier activo → 403 `not_a_cashier`.\n\n**Para datos del request anterior (encadenado)**: este request no setea variables; sólo lista."
+          },
+          "response": []
+        },
+        {
+          "name": "Create novelty (cashier)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('data tiene id+cashier_id+name', () => {",
+                  "    pm.expect(body.data).to.have.property('id');",
+                  "    pm.expect(body.data).to.have.property('cashier_id');",
+                  "    pm.expect(body.data).to.have.property('name');",
+                  "    pm.expect(body.data.novelty_type).to.have.property('icon');",
+                  "});",
+                  "console.log('novelty #' + body.data.id + ' creada por cashier ' + body.data.cashier_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cashier_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"novelty_type_id\": {{last_novelty_type_id}},\n  \"name\": \"Impresora se trabo\",\n  \"description\": \"Atasco en la cola, reinicie el POS\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/novelties",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "novelties"
+              ]
+            },
+            "description": "Registra una novedad reportada por el cashier autenticado.\n\n**Body**:\n- `novelty_type_id` (obligatorio): id de un tipo activo. Si está inactivo, 422 `novelty_type_inactive`.\n- `name` (obligatorio): titulo corto de la novedad.\n- `description` (opcional): texto largo libre.\n\nEl `cashier_id` se infiere del token — NO se manda en el body.\n\n**Auth**: `{{cashier_token}}`.\n\n**Errores**:\n- `401 not_authenticated` — sin token\n- `403 not_a_cashier` — user no es cashier activo\n- `422 novelty_type_not_found` / `novelty_type_inactive`\n- `422` validation — name vacio, novelty_type_id ausente"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Pos Schedules",
+      "item": [
+        {
+          "name": "Upload Excel (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('data tiene counts', () => {",
+                  "    pm.expect(body.data).to.have.property('schedules_created');",
+                  "    pm.expect(body.data).to.have.property('schedules_overwritten');",
+                  "    pm.expect(body.data).to.have.property('rows_in_excel');",
+                  "    pm.expect(body.data).to.have.property('days');",
+                  "});",
+                  "console.log('--- upload ---');",
+                  "console.log('rango       :', body.data.from, 'a', body.data.to, '(' + body.data.days + ' dias)');",
+                  "console.log('rows excel  :', body.data.rows_in_excel);",
+                  "console.log('creados     :', body.data.schedules_created);",
+                  "console.log('sobreescritos:', body.data.schedules_overwritten);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "description": "Archivo Excel/CSV con columnas: id punto de venta | nombre punto de venta | cedula | nombre cajero",
+                  "type": "file",
+                  "value": null
+                },
+                {
+                  "key": "from",
+                  "value": "2026-05-25",
+                  "type": "text",
+                  "description": "YYYY-MM-DD"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-05-31",
+                  "type": "text",
+                  "description": "YYYY-MM-DD (>= from)"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pos-schedules/upload",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pos-schedules",
+                "upload"
+              ]
+            },
+            "description": "**Sube Excel con la programación cashier → PDV para un rango de fechas.** Solo admin.\n\n**Body (multipart)**:\n- `file` (required, file): xlsx/xls/csv, max 5 MB\n- `from` (required, string YYYY-MM-DD)\n- `to`   (required, string YYYY-MM-DD, >= from)\n\n**Excel columnas** (case-insensitive, sin tildes):\n| Columna | Validación |\n|---|---|\n| `id punto de venta` | debe existir en `pos_locations` |\n| `nombre punto de venta` | **informativo** (no se valida ni se persiste) |\n| `cedula` | debe matchear `cashiers.document_number` (cashier activo) |\n| `nombre cajero` | **informativo** (no se valida ni se persiste) |\n\n**Política de overwrite**: si para alguna fecha del rango ya existe programación, **se borra TODA y se reescribe** con lo del Excel (cuenta `schedules_overwritten` en el response).\n\n**Validación atómica**: si CUALQUIER fila tiene error, aborta toda la importación y retorna `excel_validation_failed` con `details.row_errors`:\n```json\n{\n  \"success\": false,\n  \"error_code\": \"excel_validation_failed\",\n  \"details\": { \"row_errors\": [{ \"row\": 3, \"errors\": [\"pos_location_id 99 no existe\"] }] }\n}\n```\n\n**Response exitoso (201)**:\n```json\n{\n  \"success\": true,\n  \"message\": \"Programacion cargada exitosamente.\",\n  \"data\": {\n    \"from\": \"2026-05-25\", \"to\": \"2026-05-31\", \"days\": 7,\n    \"rows_in_excel\": 3, \"schedules_created\": 21, \"schedules_overwritten\": 0\n  }\n}\n```\n\n**Límites**: rango max 90 días, archivo max 5 MB.\n\n**Errores**:\n- `401 not_authenticated`\n- `403 admin_required`\n- `422 invalid_date_range` / `date_range_too_large` / `empty_excel` / `missing_columns` / `excel_validation_failed` / `excel_read_failed`"
+          },
+          "response": []
+        },
+        {
+          "name": "List schedules (admin)",
+          "event": [
+            {
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('shape paginated', () => {",
+                  "    pm.expect(body).to.have.property('data');",
+                  "    pm.expect(body).to.have.property('meta');",
+                  "    pm.expect(body).to.have.property('links');",
+                  "});",
+                  "console.log('total:', body.meta.total, '| page:', body.meta.current_page, '/', body.meta.last_page);",
+                  "body.data.forEach(s => {",
+                  "    const cashier = s.cashier ? (s.cashier.name + ' (' + s.cashier.document_number + ')') : 'cashier=' + s.cashier_id;",
+                  "    const pdv = s.pos_location ? s.pos_location.name : 'PDV ' + s.pos_location_id;",
+                  "    console.log('  #' + s.id + ' ' + s.scheduled_date + ' ' + cashier + ' -> ' + pdv + ' [' + s.last_changed_by + ']');",
+                  "});",
+                  "if (body.data.length > 0) {",
+                  "    pm.collectionVariables.set('last_pos_schedule_id', body.data[0].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              },
+              "listen": "test"
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "value": "application/json",
+                "key": "Accept"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/pos-schedules?per_page=25",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pos-schedules"
+              ],
+              "query": [
+                {
+                  "description": "tamano de pagina, default 25, max 200",
+                  "value": "25",
+                  "key": "per_page"
+                },
+                {
+                  "value": "1",
+                  "key": "page",
+                  "disabled": true
+                },
+                {
+                  "description": "filtrar por cashier",
+                  "value": "",
+                  "key": "cashier_id",
+                  "disabled": true
+                },
+                {
+                  "description": "filtrar por PDV",
+                  "value": "",
+                  "key": "pos_location_id",
+                  "disabled": true
+                },
+                {
+                  "description": "fecha exacta YYYY-MM-DD (excluye from/to)",
+                  "value": "",
+                  "key": "date",
+                  "disabled": true
+                },
+                {
+                  "description": "rango desde",
+                  "value": "",
+                  "key": "from",
+                  "disabled": true
+                },
+                {
+                  "description": "rango hasta",
+                  "value": "",
+                  "key": "to",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "**Listado paginado de programaciones (admin only).**\n\nFiltros opcionales:\n- `cashier_id` — solo de este cashier\n- `pos_location_id` — solo de este PDV\n- `date` — fecha exacta (YYYY-MM-DD); si se manda, ignora `from`/`to`\n- `from`/`to` — rango de fechas\n\n**Paginación**: default `per_page=25`, max 200. Shape Laravel paginator (`{data, meta, links}`).\n\nEager-loaded: `cashier.user`, `pos_location` (para shape rico en la tabla admin)."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete schedule (admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/pos-schedules/{{last_pos_schedule_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pos-schedules",
+                "{{last_pos_schedule_id}}"
+              ]
+            },
+            "description": "**Elimina una programación específica (admin).**\n\n`{{last_pos_schedule_id}}` lo setea el request `List schedules` con el id del primer registro de la página.\n\n**Response (200)**:\n```json\n{ \"success\": true, \"message\": \"Entrada eliminada.\" }\n```\n\n**Errores**:\n- `404 schedule_not_found` — id no existe\n- `403 admin_required`"
+          },
+          "response": []
+        },
+        {
+          "name": "My today schedule (cashier)",
+          "event": [
+            {
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "if (body.data) {",
+                  "    console.log('today:', body.data.scheduled_date, '-> PDV', body.data.pos_location_id, '(' + (body.data.pos_location ? body.data.pos_location.name : '?') + ') by', body.data.last_changed_by);",
+                  "} else {",
+                  "    console.log('sin programacion para hoy');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              },
+              "listen": "test"
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cashier_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [
+              {
+                "value": "application/json",
+                "key": "Accept"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/pos-schedules/my-today",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pos-schedules",
+                "my-today"
+              ]
+            },
+            "description": "**Devuelve la programación del cashier autenticado para HOY.**\n\nSi no tiene programación → `{ \"data\": null }` (HTTP 200, no 404 — la ausencia es válida).\n\n**Response con programación**:\n```json\n{\n  \"data\": {\n    \"id\": 1,\n    \"cashier_id\": 1,\n    \"pos_location_id\": 6,\n    \"pos_location\": { \"id\": 6, \"name\": \"Quitumbe\", \"enable_cash_out\": false },\n    \"scheduled_date\": \"2026-05-24\",\n    \"last_changed_by\": \"admin\",\n    \"created_at\": \"...\",\n    \"updated_at\": \"...\"\n  }\n}\n```\n\n**Auth**: `{{cashier_token}}`. Si no es cashier activo → 403 `not_a_cashier`.\n\n**Tip**: el mismo dato (versión liviana) viene en el `cashier-initialize` bajo `today_schedule`. Usar este endpoint solo si querés refrescar sin pedir el initialize entero."
+          },
+          "response": []
+        },
+        {
+          "name": "Update my today (cashier)",
+          "event": [
+            {
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('data tiene last_changed_by=cashier', () => {",
+                  "    pm.expect(body.data.last_changed_by).to.eql('cashier');",
+                  "});",
+                  "console.log('reasignado a PDV', body.data.pos_location_id, '(' + (body.data.pos_location ? body.data.pos_location.name : '?') + ')');"
+                ],
+                "type": "text/javascript"
+              },
+              "listen": "test"
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cashier_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pos_location_id\": 6\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pos-schedules/my-today",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pos-schedules",
+                "my-today"
+              ]
+            },
+            "description": "**El cashier autenticado se reasigna a otro PDV solo para HOY.**\n\nSi ya tenía programación hoy → actualiza el PDV. Si NO tenía → crea una nueva.\n\n**Body**:\n```json\n{ \"pos_location_id\": 6 }\n```\n\n`pos_location_id` debe existir en la tabla `pos_locations` (validación: `exists:pos_locations,id`).\n\n**Marca `last_changed_by = \"cashier\"`** en el registro. Si después el admin re-sube el Excel para el mismo día, ese cambio se sobrescribe (vuelve a `admin`).\n\n**Response (200)**: misma shape que `GET /my-today`, con el registro actualizado y `pos_location` eager-loaded.\n\n**Errores**:\n- `401 not_authenticated`\n- `403 not_a_cashier`\n- `422 pos_location_not_found` o validation (`exists`)"
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{admin_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8089"
+    },
+    {
+      "key": "admin_email",
+      "value": "admin@test.com"
+    },
+    {
+      "key": "admin_password",
+      "value": "2s93CSqBV5"
+    },
+    {
+      "key": "admin_token",
+      "value": ""
+    },
+    {
+      "key": "company_id",
+      "value": ""
+    },
+    {
+      "key": "branch_id",
+      "value": ""
+    },
+    {
+      "key": "identification_type_id",
+      "value": ""
+    },
+    {
+      "key": "cashier_phone",
+      "value": ""
+    },
+    {
+      "key": "cashier_password",
+      "value": ""
+    },
+    {
+      "key": "cashier_device_pin",
+      "value": ""
+    },
+    {
+      "key": "cashier_token",
+      "value": ""
+    },
+    {
+      "key": "qr_count",
+      "value": "10"
+    },
+    {
+      "key": "qr_cashier_id",
+      "value": "1"
+    },
+    {
+      "key": "qr_fare_ids",
+      "value": "1,2,3,4,5,6"
+    },
+    {
+      "key": "qr_expired_time",
+      "value": "60"
+    },
+    {
+      "key": "token_multi_qr",
+      "value": ""
+    },
+    {
+      "key": "dat_now",
+      "value": ""
+    },
+    {
+      "key": "active_session_id",
+      "value": ""
+    },
+    {
+      "key": "gateway_v2_product_id",
+      "value": ""
+    },
+    {
+      "key": "last_novelty_type_id",
+      "value": ""
+    },
+    {
+      "key": "rc172_v1_csv_tokens",
+      "value": ""
+    }
+  ]
+}

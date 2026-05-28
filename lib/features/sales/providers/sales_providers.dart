@@ -113,14 +113,53 @@ class ProductsState {
 }
 
 class ProductsNotifier extends StateNotifier<ProductsState> {
-  ProductsNotifier() : super(const ProductsState());
+  final SalesService _salesService;
+
+  ProductsNotifier(this._salesService) : super(const ProductsState());
 
   Future<void> fetchProducts() async {
     state = state.copyWith(status: ProductsStatus.loading, errorMessage: null);
+
+    // 1. Intentar cargar desde la API (API-first)
+    try {
+      final apiProducts = await _salesService.fetchProducts();
+
+      // 2. Persistir en SQLite para uso offline
+      final db = await DatabaseHelper.instance.database;
+      await db.delete('products');
+      for (final p in apiProducts) {
+        try {
+          await db.insert('products', {
+            'id': p.id,              // MongoDB _id como TEXT (correcto)
+            'product_name': p.productName,
+            'value': p.value,
+            'pmr': p.pmr ? 1 : 0,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+        } catch (e) {
+          print('DEBUG: Error guardando producto ${p.productName} en cache: $e');
+        }
+      }
+
+      state = state.copyWith(status: ProductsStatus.loaded, products: apiProducts);
+      return;
+    } catch (_) {
+      // Si falla la red, caemos al caché local
+    }
+
+    // 3. Fallback: leer desde SQLite (modo offline)
     try {
       final db = await DatabaseHelper.instance.database;
       final results = await db.query('products');
-      
+
+      if (results.isEmpty) {
+        state = state.copyWith(
+          status: ProductsStatus.error,
+          errorMessage: 'Sin conexión y sin tarifas en caché. Conéctese al menos una vez.',
+        );
+        return;
+      }
+
       final products = results.map((row) => Product(
         id: row['id']?.toString() ?? '',
         productName: row['product_name']?.toString() ?? '',
@@ -140,7 +179,8 @@ class ProductsNotifier extends StateNotifier<ProductsState> {
 
 final productsProvider =
     StateNotifierProvider<ProductsNotifier, ProductsState>((ref) {
-  return ProductsNotifier();
+  final salesService = ref.read(salesServiceProvider);
+  return ProductsNotifier(salesService);
 });
 
 // ==================== Estado de Compra QR ====================
@@ -224,6 +264,7 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
         'status': isOffline ? 'pending' : 'synced',
         'created_at': DateTime.now().toIso8601String(),
         'qr_data': result.qrCode,
+        'print_status': 0, // Inicia en 0, la UI lo actualizará a 1 si imprime
       });
 
       state = state.copyWith(
@@ -303,18 +344,33 @@ class SalesHistoryNotifier extends StateNotifier<SalesHistoryState> {
       final branchId = await _storage.getBranchId() ?? 0;
       final sessionQuery = await db.query('sessions', where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
       
-      if (sessionQuery.isEmpty) {
-        state = state.copyWith(status: SalesHistoryStatus.loaded, sales: [], total: 0);
-        return;
+      int? openSessionId;
+      if (sessionQuery.isNotEmpty) {
+        openSessionId = sessionQuery.first['id'] as int;
       }
-      final sessionId = sessionQuery.first['id'];
 
-      final data = await db.query('transactions', where: 'session_id = ?', whereArgs: [sessionId], orderBy: 'created_at DESC');
+      final now = DateTime.now();
+      final todayStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+
+      // Buscar por fecha para no borrar de la vista las que ya se cerraron hoy
+      final data = await db.query(
+        'transactions', 
+        where: 'created_at LIKE ?', 
+        whereArgs: ['$todayStr%'], 
+        orderBy: 'created_at DESC'
+      );
+      
+      // Mapear con un flag 'is_closed'
+      List<Map<String, dynamic>> mappedData = data.map((tx) {
+         final map = Map<String, dynamic>.from(tx);
+         map['is_closed'] = tx['session_id'] != openSessionId;
+         return map;
+      }).toList();
       
       state = state.copyWith(
         status: SalesHistoryStatus.loaded,
-        sales: data,
-        total: data.length,
+        sales: mappedData,
+        total: mappedData.length,
       );
     } catch (e, stack) {
       state = state.copyWith(
@@ -324,9 +380,9 @@ class SalesHistoryNotifier extends StateNotifier<SalesHistoryState> {
     }
   }
 
-  // Cierre de caja: ya no eliminamos las ventas, solo se actualiza la sesión
+  // Cierre de caja: ya no vaciamos la lista, solo refrescamos
   Future<void> clearHistory() async {
-    state = const SalesHistoryState(status: SalesHistoryStatus.loaded);
+    await fetchHistory();
   }
 
   // Reemplazamos el método original
@@ -343,23 +399,59 @@ class SalesHistoryNotifier extends StateNotifier<SalesHistoryState> {
         state = state.copyWith(status: SalesHistoryStatus.loaded, sales: [], total: 0);
         return;
       }
-      final sessionId = sessionQuery.first['id'];
+      int? openSessionId;
+      if (sessionQuery.isNotEmpty) {
+        openSessionId = sessionQuery.first['id'] as int;
+      }
+
+      final now = DateTime.now();
+      final todayStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
 
       final data = await db.query('transactions', 
-        where: 'session_id = ? AND (id LIKE ? OR amount LIKE ?)', 
-        whereArgs: [sessionId, '%$query%', '%$query%'], 
+        where: 'created_at LIKE ? AND (id LIKE ? OR amount LIKE ?)', 
+        whereArgs: ['$todayStr%', '%$query%', '%$query%'], 
         orderBy: 'created_at DESC');
       
+      List<Map<String, dynamic>> mappedData = data.map((tx) {
+         final map = Map<String, dynamic>.from(tx);
+         map['is_closed'] = tx['session_id'] != openSessionId;
+         return map;
+      }).toList();
+
       state = state.copyWith(
         status: SalesHistoryStatus.loaded,
-        sales: data,
-        total: data.length,
+        sales: mappedData,
+        total: mappedData.length,
       );
     } catch (e) {
       state = state.copyWith(
         status: SalesHistoryStatus.error,
         errorMessage: 'Error en la búsqueda local',
       );
+    }
+  }
+
+  Future<void> markAsPrinted(String transactionId, int newPrintStatus) async {
+    try {
+      final db = await DatabaseHelper.instance.database;
+      await db.update(
+        'transactions',
+        {'print_status': newPrintStatus},
+        where: 'id = ?',
+        whereArgs: [transactionId],
+      );
+      // Actualizamos estado en memoria sin hacer fetch de nuevo (optimístico)
+      final newSales = state.sales.map((sale) {
+        if (sale['id'] == transactionId) {
+          final updated = Map<String, dynamic>.from(sale);
+          updated['print_status'] = newPrintStatus;
+          return updated;
+        }
+        return sale;
+      }).toList();
+      state = state.copyWith(sales: newSales);
+    } catch (e) {
+      print('Error marcando como impreso: $e');
     }
   }
 }

@@ -7,19 +7,22 @@ import '../../../core/database/database_helper.dart';
 import '../../../core/network/dio_client.dart';
 import '../models/system_status.dart';
 import '../../sync/services/background_sync_service.dart';
+import '../../printer/services/printer_service.dart';
 
 final systemStatusProvider = StateNotifierProvider<SystemStatusNotifier, SystemStatus>((ref) {
   final dio = ref.watch(dioProvider);
   final syncService = ref.watch(backgroundSyncProvider);
-  return SystemStatusNotifier(dio, syncService);
+  final printerService = ref.watch(printerServiceProvider);
+  return SystemStatusNotifier(dio, syncService, printerService);
 });
 
 class SystemStatusNotifier extends StateNotifier<SystemStatus> {
   final Dio _dio;
   final BackgroundSyncService _syncService;
+  final PrinterService _printerService;
   Timer? _timer;
 
-  SystemStatusNotifier(this._dio, this._syncService) : super(SystemStatus()) {
+  SystemStatusNotifier(this._dio, this._syncService, this._printerService) : super(SystemStatus()) {
     _initMonitoring();
   }
 
@@ -38,8 +41,8 @@ class SystemStatusNotifier extends StateNotifier<SystemStatus> {
     // Validar inicialmente
     _checkAllStatuses();
 
-    // Loop de validación cada 10 segundos
-    _timer = Timer.periodic(const Duration(seconds: 10), (_) {
+    // Loop de validación cada 5 segundos
+    _timer = Timer.periodic(const Duration(seconds: 5), (_) {
       _checkAllStatuses();
     });
   }
@@ -48,6 +51,7 @@ class SystemStatusNotifier extends StateNotifier<SystemStatus> {
     await _checkInternetPing();
     await _checkPrinter();
     await _checkPmr();
+    await _checkCameraPing();
     await _checkPendingTransactions();
   }
 
@@ -59,17 +63,17 @@ class SystemStatusNotifier extends StateNotifier<SystemStatus> {
         return;
       }
       
-      // Ping a un servidor confiable o a la API misma
-      final response = await _dio.get('https://google.com', options: Options(
+      // Ping a la propia API para validar conectividad real con el backend
+      final response = await _dio.get('/user', options: Options(
         sendTimeout: const Duration(seconds: 3),
         receiveTimeout: const Duration(seconds: 3),
       ));
       
-      final isOnline = response.statusCode == 200;
+      final isOnline = (response.statusCode ?? 0) < 500;
       state = state.copyWith(isInternetConnected: isOnline);
 
-      // Sincronización en segundo plano si hay red y pendientes
-      if (isOnline && state.pendingTransactions > 0) {
+      // Sincronización en segundo plano si hay red (independiente de pendientes)
+      if (isOnline) {
         _syncService.syncPendingData();
       }
     } catch (e) {
@@ -78,15 +82,40 @@ class SystemStatusNotifier extends StateNotifier<SystemStatus> {
   }
 
   Future<void> _checkPrinter() async {
-    // TODO: Implementar validación USB con el paquete flutter_thermal_printer
-    // Por ahora simulado
-    state = state.copyWith(isPrinterConnected: true);
+    try {
+      final isConnected = await _printerService.pingPrinter();
+      state = state.copyWith(isPrinterConnected: isConnected);
+    } catch (_) {
+      state = state.copyWith(isPrinterConnected: false);
+    }
+  }
+
+  /// Fuerza un chequeo inmediato de la impresora (ej. antes de una venta)
+  Future<bool> checkPrinterNow() async {
+    await _checkPrinter();
+    return state.isPrinterConnected;
   }
 
   Future<void> _checkPmr() async {
     // TODO: Implementar ping al endpoint de la puerta PMR
     // Por ahora simulado
     state = state.copyWith(isPmrConnected: false);
+  }
+
+  Future<void> _checkCameraPing() async {
+    try {
+      // Mock temporal: Endpoint de la cámara
+      final response = await _dio.get(
+        'http://192.168.1.101', // IP placeholder
+        options: Options(
+          sendTimeout: const Duration(seconds: 2),
+          receiveTimeout: const Duration(seconds: 2),
+        ),
+      );
+      state = state.copyWith(isCameraConnected: (response.statusCode ?? 0) < 500);
+    } catch (_) {
+      state = state.copyWith(isCameraConnected: false);
+    }
   }
 
   Future<void> _checkPendingTransactions() async {
