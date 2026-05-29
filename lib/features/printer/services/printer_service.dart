@@ -15,21 +15,16 @@ class PrinterService {
   int? _lastProductId;
 
   Future<bool> checkHardwareConnection() async {
-    // Si no hemos conectado nunca, asumimos que no sabemos y dejamos que intente
-    if (_lastVendorId == null || _lastProductId == null) {
-      return true;
-    }
-
     try {
       final bool isConnected =
           await _platform.invokeMethod('isUsbDeviceConnected', {
-        'vendorId': _lastVendorId,
-        'productId': _lastProductId,
+        'vendorId': _lastVendorId ?? -1,
+        'productId': _lastProductId ?? -1,
       });
       return isConnected;
     } catch (e) {
-      print('DEBUG: Error checking native hardware connection: $e');
-      return true; // Si falla el bridge, dejamos intentar a la librería
+      print('DEBUG: Error native check, asumiendo true por seguridad: $e');
+      return true;
     }
   }
 
@@ -117,6 +112,78 @@ class PrinterService {
     return await checkHardwareConnection();
   }
 
+  Future<bool> printFontAndQrTest() async {
+    try {
+      final hardwareConnected = await checkHardwareConnection();
+      if (!hardwareConnected) return false;
+      final connected = await connectToFirstUsb();
+      if (!connected) return false;
+
+      final bytes = <int>[];
+      bytes.addAll([0x1B, 0x40]); // Init
+      bytes.addAll([0x1B, 0x61, 0x01]); // Center
+
+      bytes.addAll([0x1B, 0x45, 0x01]); // Bold
+      bytes.addAll([0x1D, 0x21, 0x00]); // Normal
+      bytes.addAll(_text('--- PRUEBA DE FUENTES ---\n\n'));
+
+      bytes.addAll([0x1D, 0x21, 0x00]); // Normal
+      bytes.addAll(_text('TAMANO NORMAL (0x00):\nCorredor Central Norte\n\n'));
+
+      bytes.addAll([0x1D, 0x21, 0x01]); // Doble alto
+      bytes.addAll(_text('DOBLE ALTO (0x01):\nCorredor Central Norte\n\n'));
+
+      bytes.addAll([0x1D, 0x21, 0x10]); // Doble ancho
+      bytes.addAll(_text('DOBLE ANCHO (0x10):\nCorredor Central Norte\n\n'));
+
+      bytes.addAll([0x1D, 0x21, 0x11]); // Doble ancho y alto
+      bytes.addAll(_text('GIGANTE (0x11):\nCorredor Central Norte\n\n'));
+
+      bytes.addAll([0x1D, 0x21, 0x00]); // Normal
+      bytes.addAll(_text('--- PRUEBA DE QR ---\n\n'));
+      bytes.addAll([0x1B, 0x45, 0x00]); // No Bold
+
+      bytes.addAll(_text('QR TAMANO 4 (0x04):\n'));
+      bytes.addAll([0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]); // Model 2
+      bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x04]); // Size 4
+      bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]); // Lvl M
+      final d4 = 'TEST-QR-SIZE-4'.codeUnits;
+      bytes.addAll([0x1D, 0x28, 0x6B, (d4.length + 3) & 0xFF, ((d4.length + 3) >> 8) & 0xFF, 0x31, 0x50, 0x30]);
+      bytes.addAll(d4);
+      bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]); // Print
+      bytes.addAll(_text('\n\n'));
+
+      bytes.addAll(_text('QR TAMANO 5 (0x05):\n'));
+      bytes.addAll([0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]);
+      bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x05]); // Size 5
+      bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]);
+      final d5 = 'TEST-QR-SIZE-5'.codeUnits;
+      bytes.addAll([0x1D, 0x28, 0x6B, (d5.length + 3) & 0xFF, ((d5.length + 3) >> 8) & 0xFF, 0x31, 0x50, 0x30]);
+      bytes.addAll(d5);
+      bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]);
+      bytes.addAll(_text('\n\n'));
+
+      bytes.addAll(_text('QR TAMANO 6 (0x06):\n'));
+      bytes.addAll([0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]);
+      bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x06]); // Size 6
+      bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]);
+      final d6 = 'TEST-QR-SIZE-6'.codeUnits;
+      bytes.addAll([0x1D, 0x28, 0x6B, (d6.length + 3) & 0xFF, ((d6.length + 3) >> 8) & 0xFF, 0x31, 0x50, 0x30]);
+      bytes.addAll(d6);
+      bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]);
+      bytes.addAll(_text('\n\n'));
+
+      bytes.addAll([0x1B, 0x64, 0x04]);
+      bytes.addAll([0x1D, 0x56, 0x42, 0x00]);
+
+      if (_connectedPrinter == null) return false;
+      await _printer.printData(_connectedPrinter!, Uint8List.fromList(bytes));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   // ==================== Impresión x RAW Bytes ====================
 
   Future<bool> printTicket({
@@ -158,7 +225,7 @@ class PrinterService {
       bytes.addAll([0x1B, 0x40]); // Init
       bytes.addAll([0x1B, 0x61, 0x01]); // Centro
       bytes.addAll([0x1B, 0x45, 0x01]); // Bold
-      bytes.addAll([0x1D, 0x21, 0x11]); // Tamaño GRANDE (doble ancho y alto)
+      bytes.addAll([0x1D, 0x21, 0x01]); // Tamaño DOBLE ALTO
       bytes.addAll(_text('Corredor Central Norte\n'));
 
       bytes.addAll([0x1D, 0x21, 0x00]); // Tamaño normal
@@ -182,7 +249,7 @@ class PrinterService {
 
       bytes.addAll([0x1B, 0x61, 0x01]); // Centro
       bytes.addAll([0x1B, 0x45, 0x01]); // Bold
-      bytes.addAll([0x1D, 0x21, 0x11]); // Tamaño GRANDE (doble ancho y alto)
+      bytes.addAll([0x1D, 0x21, 0x10]); // Tamaño DOBLE ANCHO
 
       final String name =
           productName != null ? productName.trim().toUpperCase() : 'REGULAR';

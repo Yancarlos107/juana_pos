@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Filtro genérico para impresoras térmicas USB -->
-    <usb-device class="7" /> 
-    <usb-device class="255" />
+    <!-- Vendor ID 1208 = 0x04B8 = Seiko Epson Corp (requerido por ePOS2 SDK) -->
+    <usb-device vendor-id="1208" />
 </resources>
