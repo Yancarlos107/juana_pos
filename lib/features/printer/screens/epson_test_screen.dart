@@ -108,6 +108,23 @@ class _EpsonTestScreenState extends State<EpsonTestScreen> {
             const SizedBox(height: 32),
             const Divider(),
             const SizedBox(height: 16),
+            const Text(
+              '3. Ticket de prueba:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            ElevatedButton.icon(
+              onPressed: _isLoading ? null : _imprimirTicketPrueba,
+              icon: const Icon(Icons.receipt_long),
+              label: const Text('IMPRIMIR TICKET DE PRUEBA'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.indigo,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+            ),
+            const SizedBox(height: 32),
+            const Divider(),
+            const SizedBox(height: 16),
             ElevatedButton.icon(
               onPressed: _mostrarLog,
               icon: const Icon(Icons.bug_report),
@@ -125,6 +142,30 @@ class _EpsonTestScreenState extends State<EpsonTestScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  void _imprimirTicketPrueba() async {
+    setState(() => _isLoading = true);
+    final result = await _epsonService.printTestTicket();
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    String message;
+    Color color;
+    if (result == null) {
+      message = 'Permiso USB solicitado. Acepta el diálogo y vuelve a intentar.';
+      color = Colors.orange;
+    } else if (result) {
+      message = 'Ticket de prueba enviado con exito';
+      color = Colors.green;
+    } else {
+      message = 'Error al imprimir ticket de prueba';
+      color = Colors.red;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: color),
     );
   }
 
