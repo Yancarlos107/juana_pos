@@ -30,8 +30,8 @@ La consola de Red de Recarga se apoya en autenticación **Laravel Sanctum** y en
 **2.1. Login – Obtener token Sanctum**
 
 - **Método**: `POST`
-- **Path**: `/sanctum/token`
-- **URL completa**: `${environment.uri}/sanctum/token`
+- **Path**: `/cashier-login`
+- **URL completa**: `${ApiConstants.baseUrl}/cashier-login`
 - **Headers**:
   - `Accept: application/json`
   - `Content-Type: application/json`
@@ -39,11 +39,13 @@ La consola de Red de Recarga se apoya en autenticación **Laravel Sanctum** y en
 
 ```json
 {
-  "email": "usuario@ejemplo.com",
+  "phone_number": "usuario@ejemplo.com o número",
   "password": "********",
-  "device_name": "postman"
+  "device_name": "pos_flutter"
 }
 ```
+
+- **Soporte Offline**: Existe un fallback implementado con SQLite local para permitir el inicio de sesión sin conexión utilizando los credenciales guardados de la sesión previa.
 
 - **Respuesta esperada**:
   - String con el **token de acceso** (formato típico de Sanctum: `"id|token..."`).
@@ -338,22 +340,22 @@ Todas las peticiones van contra **`${environment.uri}`** (misma base que el rest
 **7.3.1. Listar productos / tarifas para el desplegable**
 
 - **Método**: `GET`
-- **Path**: `/gateway/v1/products`
-- **URL completa**: `${environment.uri}/gateway/v1/products`
+- **Path**: `/gateway/v2/products`
+- **URL completa**: `${ApiConstants.baseUrl}/gateway/v2/products`
 - **Query params**:
-  - `page` (opcional): el servicio solo añade `?page=` si `page` es truthy; la carga inicial usa `index(0)` y **no** envía `page` (equivalente a primera página o lista completa según implementación del gateway).
+  - `page` (opcional): si se proporciona una página > 0, se añade a los parámetros de la solicitud.
 - **Headers**:
   - `Accept: application/json`
-  - `Authorization: Bearer <token>` (heredado del `HttpClient` global del back‑office, si está configurado el interceptor).
+  - `Authorization: Bearer <token>`
 - **Uso en UI**:
   - El componente recibe `{ data }` y deduplica por `product_name`, quedándose con el registro de **mayor `id`** por nombre de producto.
   - Cada ítem expone al menos: `_id`, `product_name`, `value` (se muestra en el `<ng-select>` como “Valor | nombre”).
 
-**7.3.2. Registrar venta / generación de QR (una por cada unidad de cantidad)**
+**7.3.2. Registrar venta / generación de QR**
 
 - **Método**: `POST`
-- **Path**: `/gateway/v1/purchases`
-- **URL completa**: `${environment.uri}/gateway/v1/purchases`
+- **Path**: `/gateway/v2/purchases`
+- **URL completa**: `${ApiConstants.baseUrl}/gateway/v2/purchases`
 - **Headers**:
   - `Content-Type: application/json`
   - `Accept: application/json`
@@ -391,11 +393,10 @@ Para enriquecer el contexto (nombre y documento de la empresa asociada a la sesi
 
 ```mermaid
 flowchart LR
-  A[Usuario en /back-office/recargar/venta-qr] --> B[GET /gateway/v1/products]
+  A[Usuario] --> B[GET /gateway/v2/products]
   B --> C[Selección tarifa + cantidad]
-  C --> D[POST /gateway/v1/purchases x N]
-  D --> E[Vista previa ngx-qrcode + transaction_id]
-  E --> F[PDF opcional en cliente]
+  C --> D[POST /gateway/v2/purchases]
+  D --> E[Respuesta QR]
 ```
 
 ##### 7.6. Relación con “reportes” de QR
