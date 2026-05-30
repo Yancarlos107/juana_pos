@@ -115,7 +115,12 @@ class LocalStorageRepository {
   Future<void> clearAll() async {
     await _secureStorage.deleteAll();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
+    
+    // Borramos datos de sesión activa, conservando cachés para uso offline futuro
+    await prefs.remove(_branchIdKey);
+    await prefs.remove(_userRolesKey);
+    await prefs.remove('active_pos_location_id');
+    await prefs.remove('active_pos_location_name');
   }
 
   // ================= Manejo de Ventas Locales (Recaudo) =================

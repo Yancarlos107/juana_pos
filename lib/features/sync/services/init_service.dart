@@ -77,6 +77,17 @@ class InitService {
       final serverMessage = e.response?.data?['message'];
       final detail = serverMessage ?? e.message ?? e.type.toString();
       throw Exception('Error al inicializar POS ($detail)');
+    } catch (e) {
+      // Si no hay token u otro error genérico, intentar offline
+      final cachedLocations = await _storage.getPosLocationsList();
+      if (cachedLocations != null && cachedLocations.isNotEmpty) {
+        final locations = cachedLocations.map((l) => PosLocationModel.fromJson(l)).toList();
+        return {
+          'locations': locations,
+          'novelties': [],
+        };
+      }
+      throw Exception('Modo offline: No hay puntos de venta guardados en el dispositivo. Conéctate a internet e inicia sesión al menos una vez para sincronizarlos.');
     }
   }
 
@@ -91,7 +102,10 @@ class InitService {
   Future<void> updatePosSchedule(int posLocationId) async {
     try {
       final token = await _storage.getToken();
-      if (token == null) throw Exception('No hay token disponible.');
+      if (token == null) {
+        // Modo offline o sesión parcial: no enviar actualización de schedule al servidor
+        return;
+      }
 
       await _dio.put(
         '/pos-schedules/my-today',
@@ -105,6 +119,13 @@ class InitService {
         ),
       );
     } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionTimeout || 
+          e.type == DioExceptionType.receiveTimeout || 
+          e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.unknown) {
+        // Offline: Permitimos avanzar usando el punto de venta guardado localmente
+        return;
+      }
       final serverMessage = e.response?.data?['message'];
       final detail = serverMessage ?? e.message ?? e.type.toString();
       throw Exception('Error al actualizar sucursal ($detail)');

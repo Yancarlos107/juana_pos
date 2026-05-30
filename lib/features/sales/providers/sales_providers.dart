@@ -4,6 +4,7 @@ import '../../../core/storage/local_storage_repository.dart';
 import '../../../core/database/database_helper.dart';
 import '../models/tarifa_model.dart';
 import '../services/sales_service.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 // ==================== Proveedor del Servicio ====================
 
@@ -58,10 +59,15 @@ class BalanceNotifier extends StateNotifier<BalanceState> {
       await _storage.saveBalance(balance);
       state = state.copyWith(status: BalanceStatus.loaded, balance: balance);
     } catch (e) {
-      state = state.copyWith(
-        status: BalanceStatus.error,
-        errorMessage: e.toString().replaceFirst('Exception: ', ''),
-      );
+      // Si falla la red, caemos al caché local offline
+      try {
+        await loadLocalBalance();
+      } catch (innerError) {
+        state = state.copyWith(
+          status: BalanceStatus.error,
+          errorMessage: e.toString().replaceFirst('Exception: ', ''),
+        );
+      }
     }
   }
 
@@ -231,6 +237,11 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
       bool isOffline = false;
 
       try {
+        final connectivityResult = await Connectivity().checkConnectivity();
+        final hasInternet = connectivityResult.isNotEmpty && connectivityResult.first != ConnectivityResult.none;
+        if (!hasInternet) {
+          throw Exception('Offline');
+        }
         result = await _salesService.purchaseQr(productId: product.id);
       } catch (e) {
         // Asumimos error de red y pasamos a offline
@@ -353,11 +364,15 @@ class SalesHistoryNotifier extends StateNotifier<SalesHistoryState> {
       final todayStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
 
       // Buscar por fecha para no borrar de la vista las que ya se cerraron hoy
-      final data = await db.query(
-        'transactions', 
-        where: 'created_at LIKE ?', 
-        whereArgs: ['$todayStr%'], 
-        orderBy: 'created_at DESC'
+      final data = await db.rawQuery(
+        '''
+        SELECT t.*, p.product_name 
+        FROM transactions t
+        LEFT JOIN products p ON t.product_id = p.id
+        WHERE t.created_at LIKE ? 
+        ORDER BY t.created_at DESC
+        ''',
+        ['$todayStr%']
       );
       
       // Mapear con un flag 'is_closed'

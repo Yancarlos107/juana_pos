@@ -1,71 +1,108 @@
-# Juana Sistema POS (Red de Recarga) - Documentación Maestra
+# Juana Sistema POS (Red de Recarga)
 
-**⚠️ AVISO PARA AGENTES DE IA ⚠️**
-Este `README.md` es la **ÚNICA FUENTE DE VERDAD** para las reglas de negocio, el flujo operativo y el estado del proyecto. Debes basar todas tus implementaciones en este documento. 
-
----
-
-## 1. Estado Actual del Proyecto (v2.13)
-El proyecto actualmente cuenta con las siguientes funcionalidades ya desarrolladas:
-- **UI/UX**: `LoginScreen` y `DashboardScreen` modernizados (temas claros, saldo en el header).
-- **Lógica Local**: Manejo de saldo con `SharedPreferences`, extracción desde JSON (`data.branch.account.cards[0].balance`), bloqueo de venta si el saldo es insuficiente.
-- **Hardware**: Integración nativa de Impresión Térmica (ESC/POS vía USB) y ajuste horario a UTC-5. Generación nativa de códigos QR.
-- **Documentación Técnica Adicional**: 
-  - `red-recarga-consola.md`: Documentación de los endpoints API y comportamiento de la consola web.
-  - `ticket-template.md`: Diseño base para la tirilla térmica.
-  - `ESTADO_PROYECTO.md`: Historial detallado de cambios.
+Aplicación Flutter para puntos de venta de la red de recarga Juana. Gestiona ventas de tickets QR, cierre de caja, impresión térmica y operación offline.
 
 ---
 
-## 2. Flujo Operativo y de Trabajo (Roadmap de Desarrollo)
+## Estado del Proyecto
 
-Este es el flujo funcional completo, integrando operaciones en línea y fuera de línea (offline):
+| Ítem | Detalle |
+|------|---------|
+| Versión | 2.14 |
+| Rama principal | `main` |
+| Rama activa | `feature/epson-printer` |
+| Compilación | Sin errores |
 
-### 1. Inicialización
-1.1. Sucede cuando inicia la app (se descarga la data) y cada vez que se realiza un login en línea exitoso.
-1.2. Descarga la data desde el endpoint y la almacena localmente para uso offline.
-**Datos a descargar y sincronizar:**
-- Rutas
-- Tarifas (Productos)
-- Usuarios vs Hash de Claves (para autenticación offline)
-- Data de caja vs Red de recarga
+---
 
-### 2. Login (Online / Offline)
-2.1. **Online:** Autenticación directa contra la API de Juana y descarga de inicialización (Paso 1).
-2.2. **Sin sesión:** Si no hay sesión de caja abierta, el sistema procede a abrir una nueva.
-2.3. **Sesión del mismo día:** Si ya existe una sesión de caja abierta correspondiente al mismo día, avisa al usuario e inicia el módulo de ventas sobre esa misma sesión.
-2.4. **Sesión de otro día (atrasada):** Si hay una sesión de caja abierta de un día anterior, el sistema avisa al usuario, la cierra automáticamente marcándola como "tardía", e inicia ventas abriendo una nueva sesión.
+## Funcionalidades Implementadas
 
-### 3. Apertura de Caja
-Flujo para registrar la apertura de caja y el saldo o fondo base antes de comenzar a operar.
+### Login y Autenticación
+- Login online contra API (`POST /cashier-login`) con token Sanctum.
+- Login offline: credenciales se guardan en SQLite tras el primer login exitoso; se valida usuario y contraseña sin red.
+- Al logout, se borran solo datos de sesión activa (no los cachés offline).
 
-### 4. Venta de Productos x Tarifas
-4.1. Se presenta la lista de productos/tarifas disponibles y sus valores.
-4.2. **Campo PMR (Personas con Movilidad Reducida):** (0,1). Si el producto es PMR, se muestra el símbolo de discapacitado en la interfaz.
+### Selección de Punto de Venta
+- Diálogo post-login para elegir el POS activo.
+- Fallback offline: si no hay red, usa la lista de puntos guardada localmente.
+- Botón CANCELAR disponible en el diálogo.
 
-### 5. Revisión de Ventas
-5.1. Reporte interno local con todos los campos y valores. Muestra el total de ventas acumulado hasta el momento de la revisión.
+### Dashboard y Ventas
+- Listado de tarifas/productos desde el servidor, con caché local.
+- Venta de ticket QR: `POST /gateway/v2/purchases`.
+- Detección de conexión antes de intentar la venta; flujo offline si no hay red.
+- Validación de saldo local antes de cada venta.
+- Balance: carga desde API con fallback al caché local si falla la red.
 
-### 6. Cierre de Caja
-6.1. Pantalla resumen que muestra: Total de ventas desglosado por cada producto, su valor total y la suma global.
-6.2. **Impresión de la tirilla de cierre de caja:**
-   - Subtotal por cada producto y el total general.
-   - **En Línea:** Crea un código QR con la estructura JSON del cierre y lo transmite a Juana.
-   - **Offline:** Crea un código QR principal (JSON del cierre) y códigos QR adicionales manuales (estructura tag-and-value, compresión, encriptación, base64) para subida manual.
-6.3. Las transacciones y cierres quedan pendientes localmente y se transmiten automáticamente cuando el servicio de monitoreo detecta conexión (marcado como "cerrado offline").
+### Recaudo (Historial de Transacciones)
+- Historial del día en SQLite, con JOIN a tabla `products` para mostrar nombre del producto.
+- Reimpresión de tickets individuales desde el historial.
+- Reimpresión de cierre de caja desde el historial.
 
-### 7. Apertura PMR
-7.1. Se envía un comando a un endpoint local o de hardware para abrir la puerta. Esta acción se registra internamente como una transacción "manual".
+### Cierre de Caja
+- Resumen con desglose por tarifa, total recaudado, aperturas PMR y reimpresiones.
+- Advertencia si la impresora no está conectada (con opción de continuar sin imprimir).
+- Registro del cierre en SQLite como transacción `CIERRE DE CAJA`.
+- Cierre automático al hacer logout si hay ventas pendientes.
+- Sincronización del cierre con el servidor vía `ClosureService`.
 
-### 8. Logout
-8.1. Al intentar cerrar sesión, el sistema pregunta al operador si desea realizar el "Cierre de Caja". Luego, invalida la sesión activa.
+### Impresión Térmica
+- **Epson TM-T20IIIL (USB)**: Android USB Host API directo (vendor ID `0x04B8`). ESC/POS puro via `MethodChannel`. No requiere el SDK de Epson.
+- **Otras impresoras USB/BT**: `flutter_thermal_printer` (detección por clase USB 7).
+- `PrinterService` detecta automáticamente cuál impresora está conectada y enruta la impresión.
+- Retorno `bool?`: `null` = permiso USB pendiente (usuario debe aceptar y reintentar), `true/false` = resultado.
+- Ticket de venta con QR, datos del cajero, sucursal, producto y monto.
+- Ticket de cierre con desglose, QR de cierre, horas PMR y total.
+- Zona horaria forzada a UTC-5 (Ecuador/Colombia).
 
-### 9. Servicio Interno de Monitoreo
-Servicio en segundo plano que refleja el estado del sistema mediante íconos (Verde/Rojo) en el header:
-- **Impresora:** Conectividad USB/Bluetooth.
-- **Conexión a Internet:** Estado de red.
-- **PMR:** Conectividad y respuesta del endpoint de la puerta.
-- **Transacciones Pendientes:** Indicador con la cantidad de transacciones por transmitir.
+### Modo Offline
+- Login con credenciales guardadas en SQLite.
+- Lista de puntos de venta desde caché local.
+- `updatePosSchedule` omitido silenciosamente si no hay token o hay error de red.
+- Saldo y productos desde caché local.
 
-### 10. Recepción y Transmisión de Transacción Apertura Física PMR
-Gestión asíncrona de los eventos de apertura física para consolidarlos con las transacciones de caja.
+### Monitoreo del Sistema
+- Indicadores en el header: impresora, internet, PMR, transacciones pendientes.
+- `checkPrinterNow()` antes de cada cierre para advertir al usuario.
+
+---
+
+## Arquitectura
+
+```
+lib/
+├── core/
+│   ├── database/       # SQLite (DatabaseHelper)
+│   ├── network/        # Dio client, interceptores
+│   ├── storage/        # SharedPreferences + SecureStorage
+│   └── theme/
+├── features/
+│   ├── auth/           # Login, AuthService, AuthProvider
+│   ├── monitoring/     # SystemStatusService
+│   ├── printer/        # PrinterService, EpsonEposService, EpsonTestScreen
+│   ├── sales/          # Dashboard, Recaudo, ClosureService, SalesProviders
+│   └── sync/           # InitService
+└── main.dart           # AuthGate → LoginScreen | DashboardScreen
+```
+
+```
+android/
+├── app/src/main/kotlin/   # MainActivity: USB Host API + MethodChannels
+└── app/src/main/res/xml/  # device_filter.xml: vendor-id="1208" (Epson)
+```
+
+---
+
+## Integración Epson TM-T20IIIL
+
+La impresora Epson es USB clase 255 (vendor-specific), no clase 7. Por eso `flutter_thermal_printer` no la detecta y el SDK oficial de Epson causaba crashes nativos (JNI/SIGSEGV).
+
+**Solución implementada:** Android USB Host API busca el dispositivo por vendor ID `0x04B8` (Seiko Epson Corp) directamente, abre la conexión y envía bytes ESC/POS via `bulkTransfer`. El resultado es el mismo ticket que con cualquier otra impresora térmica.
+
+Pantalla de prueba disponible en la ruta `/epson-test`.
+
+---
+
+## Documentación Adicional
+
+- `red-recarga-consola.md`: Endpoints API del backend y flujo de la consola web.

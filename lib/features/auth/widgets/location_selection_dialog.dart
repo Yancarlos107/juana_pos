@@ -163,6 +163,15 @@ class _LocationSelectionDialogState extends ConsumerState<LocationSelectionDialo
                   },
                 ),
               ),
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.grey,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              child: const Text('CANCELAR', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
           ],
         ),
       ),

@@ -69,8 +69,15 @@ class ClosureService {
       List<String> hexTokens = [];
       int? sessionId;
       
+      double totalAmount = 0.0;
       if (sessionQuery.isNotEmpty) {
         sessionId = sessionQuery.first['id'] as int;
+        
+        final result = await db.rawQuery('SELECT SUM(amount) as total FROM transactions WHERE session_id = ? AND product_id != ?', [sessionId, 'CIERRE DE CAJA']);
+        if (result.isNotEmpty && result.first['total'] != null) {
+          totalAmount = (result.first['total'] as num).toDouble();
+        }
+
         // Obtener todas las transacciones de esta sesión
         final txs = await db.query(
           'transactions',
@@ -126,6 +133,18 @@ class ClosureService {
           where: 'session_id = ? AND status = ?',
           whereArgs: [sessionId, 'pending'],
         );
+
+        // Insertar operación de cierre en el historial
+        await db.insert('transactions', {
+          'id': 'CIERRE-${DateTime.now().millisecondsSinceEpoch}',
+          'session_id': sessionId,
+          'product_id': 'CIERRE DE CAJA',
+          'amount': totalAmount,
+          'pmr': 0,
+          'status': 'synced',
+          'created_at': DateTime.now().toIso8601String(),
+          'qr_data': 'CIERRE',
+        });
       }
 
       return response.data as Map<String, dynamic>;
