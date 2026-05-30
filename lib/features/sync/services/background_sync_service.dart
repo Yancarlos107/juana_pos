@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/database/database_helper.dart';
@@ -14,6 +16,7 @@ class BackgroundSyncService {
   final Dio _dio;
   final LocalStorageRepository _storage;
   bool _isSyncing = false;
+  Map<String, String>? _cachedDeviceInfo;
 
   BackgroundSyncService(this._dio, this._storage);
 
@@ -40,32 +43,82 @@ class BackgroundSyncService {
 
     if (pending.isEmpty) return;
 
-    for (final tx in pending) {
-      try {
-        // Reconstruimos el payload para Juana
-        final payload = {
-          "product_id": tx['product_id'],
-          "amount": tx['amount'],
-          "offline_id": tx['id'], // ID local generado offline
-          "pmr": tx['pmr'] == 1,
-          "created_at": tx['created_at']
-        };
-
-        // Endpoint para compras. El backend usa "offline_id" para evitar duplicados.
-        final response =
-            await _dio.post('/gateway/v1/purchases', data: payload);
-
-        if (response.statusCode == 200 || response.statusCode == 201) {
-          // Usar local_id (PK autoincrement) para el UPDATE
-          await db.update('transactions', {'status': 'synced'},
-              where: 'local_id = ?', whereArgs: [tx['local_id']]);
-          print('DEBUG: Venta offline ${tx['id']} sincronizada con éxito.');
-        }
-      } catch (e) {
-        print('DEBUG: Fallo al sincronizar transaccion ${tx['id']}: $e');
-        // Si falla, se queda en pending para el próximo intento
-      }
+    // Obtener datos del usuario activo
+    final users = await db.query('users', limit: 1);
+    int cashierid = 1;
+    String employeeFullName = "Cajero Desconocido";
+    if (users.isNotEmpty) {
+      cashierid = (users.first['id'] as int?) ?? 1;
+      employeeFullName = (users.first['name'] as String?) ?? "Cajero Desconocido";
     }
+
+    // Obtener información del dispositivo
+    final deviceInfo = await _getDeviceInfo();
+
+    try {
+      final List<Map<String, dynamic>> tokens = pending.map((tx) {
+        return {
+          "qr": tx['qr_data'],
+          "cashierid": cashierid,
+          "expiredtime": 60,
+          "fareid": tx['product_id'],
+          "productid": tx['product_id'],
+          "versionid": 1,
+          "datetime": DateTime.parse(tx['created_at'].toString()).millisecondsSinceEpoch ~/ 1000
+        };
+      }).toList();
+
+      final payload = {
+        "dat": (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString(),
+        "token": tokens,
+        "lat": "0.0",
+        "lon": "0.0",
+        "hw": deviceInfo['hw'],
+        "ime": deviceInfo['ime'],
+        "employee_full_name": employeeFullName,
+        "typ": "RC173",
+        "ver": "1.0.0"
+      };
+
+      // Endpoint masivo RC173
+      final response = await _dio.post('/api/pos-transactions/rc173', data: payload);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        // Marcar todas como synced usando un batch
+        final batch = db.batch();
+        for (final tx in pending) {
+          batch.update('transactions', {'status': 'synced'},
+              where: 'local_id = ?', whereArgs: [tx['local_id']]);
+        }
+        await batch.commit(noResult: true);
+        print('DEBUG: ${pending.length} ventas offline sincronizadas masivamente (RC173).');
+      }
+    } catch (e) {
+      print('DEBUG: Fallo al sincronizar tramas masivas RC173: $e');
+      // Quedan en pending para el próximo intento
+    }
+  }
+
+  Future<Map<String, String>> _getDeviceInfo() async {
+    if (_cachedDeviceInfo != null) return _cachedDeviceInfo!;
+    final DeviceInfoPlugin deviceInfoPlugin = DeviceInfoPlugin();
+    String hw = "UNKNOWN";
+    String ime = "UNKNOWN";
+
+    try {
+      if (Platform.isAndroid) {
+        final build = await deviceInfoPlugin.androidInfo;
+        hw = build.model; 
+        ime = build.id;   
+      } else if (Platform.isIOS) {
+        final data = await deviceInfoPlugin.iosInfo;
+        hw = data.model;
+        ime = data.identifierForVendor ?? "UNKNOWN";
+      }
+    } catch (_) {}
+
+    _cachedDeviceInfo = {"hw": hw, "ime": ime};
+    return _cachedDeviceInfo!;
   }
 
   Future<void> _syncSessions() async {

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../services/epson_epos_service.dart';
-import '../services/printer_service.dart';
 
 class EpsonTestScreen extends StatefulWidget {
   const EpsonTestScreen({super.key});
@@ -148,8 +147,7 @@ class _EpsonTestScreenState extends State<EpsonTestScreen> {
 
   void _imprimirTicketPrueba() async {
     setState(() => _isLoading = true);
-    final printerService = PrinterService();
-    final result = await printerService.printFontAndQrTest();
+    final result = await _epsonService.printTestTicket();
     if (!mounted) return;
     setState(() => _isLoading = false);
 

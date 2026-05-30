@@ -5,7 +5,7 @@ import '../../../core/database/database_helper.dart';
 import '../models/tarifa_model.dart';
 import '../services/sales_service.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-
+import '../../monitoring/services/system_status_service.dart';
 // ==================== Proveedor del Servicio ====================
 
 final salesServiceProvider = Provider<SalesService>((ref) {
@@ -220,8 +220,9 @@ class QrPurchaseState {
 class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
   final SalesService _salesService;
   final LocalStorageRepository _storage;
+  final SystemStatusNotifier _statusNotifier;
 
-  QrPurchaseNotifier(this._salesService, this._storage) : super(const QrPurchaseState());
+  QrPurchaseNotifier(this._salesService, this._storage, this._statusNotifier) : super(const QrPurchaseState());
 
   Future<bool> purchase({required Product product}) async {
     state = state.copyWith(
@@ -233,27 +234,14 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
         throw Exception('Saldo insuficiente. Saldo actual: \$${currentBalance.toStringAsFixed(0)}. Requerido: \$${product.value.toStringAsFixed(0)}');
       }
 
-      QrPurchaseResult result;
-      bool isOffline = false;
-
-      try {
-        final connectivityResult = await Connectivity().checkConnectivity();
-        final hasInternet = connectivityResult.isNotEmpty && connectivityResult.first != ConnectivityResult.none;
-        if (!hasInternet) {
-          throw Exception('Offline');
-        }
-        result = await _salesService.purchaseQr(productId: product.id);
-      } catch (e) {
-        // Asumimos error de red y pasamos a offline
-        isOffline = true;
-        final localId = "OFF-${DateTime.now().millisecondsSinceEpoch}";
-        result = QrPurchaseResult(
-          qrCode: '{"id":"$localId","product_id":"${product.id}","value":${product.value},"offline":true}',
-          transactionId: localId,
-          yourNewBalance: currentBalance - product.value,
-          rawData: {},
-        );
-      }
+      // Se fuerza SIEMPRE la generación offline
+      final localId = "OFF-${DateTime.now().microsecondsSinceEpoch}";
+      final result = QrPurchaseResult(
+        qrCode: '{"id":"$localId","product_id":"${product.id}","value":${product.value},"offline":true}',
+        transactionId: localId,
+        yourNewBalance: currentBalance - product.value,
+        rawData: {},
+      );
       
       // 2. Decrementar saldo local tras éxito
       final newBalance = result.yourNewBalance ?? (currentBalance - product.value);
@@ -272,11 +260,14 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
         'product_id': product.id,
         'amount': product.value,
         'pmr': product.pmr ? 1 : 0,
-        'status': isOffline ? 'pending' : 'synced',
+        'status': 'pending', // Siempre local first
         'created_at': DateTime.now().toIso8601String(),
         'qr_data': result.qrCode,
         'print_status': 0, // Inicia en 0, la UI lo actualizará a 1 si imprime
       });
+
+      // 4. Actualizar contador visual inmediatamente
+      _statusNotifier.forceCheckPendingTransactions();
 
       state = state.copyWith(
         status: QrPurchaseStatus.success,
@@ -301,7 +292,8 @@ final qrPurchaseProvider =
     StateNotifierProvider<QrPurchaseNotifier, QrPurchaseState>((ref) {
   final salesService = ref.read(salesServiceProvider);
   final storage = ref.read(salesStorageProvider);
-  return QrPurchaseNotifier(salesService, storage);
+  final statusNotifier = ref.read(systemStatusProvider.notifier);
+  return QrPurchaseNotifier(salesService, storage, statusNotifier);
 });
 
 // ==================== Estado del Histórico de Ventas ====================
