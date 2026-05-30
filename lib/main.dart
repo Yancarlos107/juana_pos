@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/sales/screens/dashboard_screen.dart';
 import 'features/sales/screens/recaudo_screen.dart';
+import 'features/printer/screens/epson_test_screen.dart';
 import 'core/storage/local_storage_repository.dart';
 import 'core/theme/app_theme.dart';
 
@@ -27,6 +28,7 @@ class MyApp extends ConsumerWidget {
         '/login': (context) => const LoginScreen(),
         '/dashboard': (context) => const DashboardScreen(),
         '/recaudo': (context) => const RecaudoScreen(),
+        '/epson-test': (context) => const EpsonTestScreen(),
       },
     );
   }
