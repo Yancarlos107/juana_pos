@@ -5,6 +5,8 @@ import '../../printer/services/printer_service.dart';
 import '../../../core/storage/local_storage_repository.dart';
 import '../widgets/location_selection_dialog.dart';
 import '../../sales/services/closure_service.dart';
+import '../../../core/database/database_helper.dart';
+import 'dart:convert';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -73,14 +75,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         builder: (_) => const LocationSelectionDialog(),
       );
 
-      if (mounted && success == true) {
-        Navigator.pushReplacementNamed(context, '/dashboard');
+      if (mounted) {
+        if (success == true) {
+          Navigator.pushReplacementNamed(context, '/dashboard');
+        } else {
+          // Si el usuario cancela, cerramos la sesión parcial
+          await ref.read(authProvider.notifier).logout();
+        }
       }
     }
   }
 
-  Future<void> _testPrint() async {
-    print('DEBUG: Iniciando _testPrint...');
+  Future<void> _printLastClosure() async {
+    print('DEBUG: Iniciando _printLastClosure...');
     final printer = ref.read(printerServiceProvider);
 
     showDialog(
@@ -95,7 +102,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               children: [
                 CircularProgressIndicator(color: Color(0xFF6642F8)),
                 SizedBox(height: 16),
-                Text('Buscando impresora USB...',
+                Text('Buscando impresora y cierre...',
                     style: TextStyle(fontWeight: FontWeight.bold)),
               ],
             ),
@@ -104,24 +111,53 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ),
     );
 
-    print('DEBUG: Llamando a printer.printTicket...');
-    final success = await printer.printTicket(
-      transactionId: '12345',
-      amount: 5000,
-      qrData: 'Juana-TEST-TICKET',
-      cashierName: 'Operador de Prueba',
-      branchName: 'Sucursal de Prueba',
-    );
-    print('DEBUG: Resultado de printTicket: $success');
+    bool success = false;
+    String errorMessage = 'No hay cierres guardados';
+
+    try {
+      final db = await DatabaseHelper.instance.database;
+      final results = await db.query(
+        'transactions',
+        where: 'product_id = ?',
+        whereArgs: ['CIERRE DE CAJA'],
+        orderBy: 'created_at DESC',
+        limit: 1,
+      );
+
+      if (results.isNotEmpty) {
+        final qrData = results.first['qr_data']?.toString() ?? '';
+        final jsonStr = utf8.decode(base64Decode(qrData));
+        final data = jsonDecode(jsonStr);
+
+        final printResult = await printer.printClosingTicket(
+          cashierName: data['c']?.toString() ?? 'Operador',
+          branchName: 'Sucursal',
+          totalTransactions: data['q'] ?? 0,
+          totalAmount: (data['a'] as num?)?.toDouble() ?? 0,
+          startTime: 'Turno',
+          endTime: data['d']?.toString() ?? '',
+          qrData: qrData,
+          pmrCount: data['pmr_q'] ?? 0,
+          reprintsCount: 1,
+        );
+        success = printResult ?? false;
+
+        if (printResult == null) {
+          errorMessage = 'Acepta el permiso USB e intenta de nuevo';
+        } else if (!success) {
+          errorMessage = 'Error: No se detectó impresora USB';
+        }
+      }
+    } catch (e) {
+      errorMessage = 'Error al leer el cierre: $e';
+    }
 
     if (mounted) Navigator.of(context).pop();
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(success
-              ? '¡Prueba de impresión exitosa!'
-              : 'Error: No se detectó impresora USB'),
+          content: Text(success ? '¡Cierre impreso exitosamente!' : errorMessage),
           backgroundColor: success ? Colors.green : Colors.red,
           duration: const Duration(seconds: 4),
         ),
@@ -181,7 +217,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         color: Colors.white, strokeWidth: 3))
                 : const Text('INICIAR SESIÓN',
                     style: TextStyle(
-                        fontSize: 18,
+                        fontSize: 22, // Aumentado de 18 a 22
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1)),
           ),
@@ -220,7 +256,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         children: [
           Center(
             child: Image.asset(
-              'assets/Juana-logo.png',
+              'assets/valliu-logo.png',
               height: 90,
               errorBuilder: (ctx, err, stack) => Container(
                 padding: const EdgeInsets.all(20),
@@ -237,7 +273,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           const Text(
             'Bienvenido a Juana',
             style: TextStyle(
-              fontSize: 26,
+              fontSize: 32, // Aumentado de 26 a 32
               fontWeight: FontWeight.w900,
               color: Color(0xFF3F3D56),
               letterSpacing: -0.5,
@@ -247,7 +283,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           const Text(
             'Inicia sesión con tu código',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey, fontSize: 15),
+            style: TextStyle(color: Colors.grey, fontSize: 18), // Aumentado de 15 a 18
           ),
           const SizedBox(height: 36),
           TextFormField(
@@ -256,6 +292,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             readOnly: true,
             showCursor: true,
             onTap: () => setState(() => _activeController = _emailController),
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             decoration: InputDecoration(
               labelText: 'Usuario / Identificación',
               prefixIcon: const Icon(Icons.person_outline),
@@ -281,6 +318,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             obscureText: _obscurePassword,
             onTap: () =>
                 setState(() => _activeController = _passwordController),
+            style: const TextStyle(fontSize: 24, letterSpacing: 8, fontWeight: FontWeight.bold),
             decoration: InputDecoration(
               labelText: 'Contraseña',
               prefixIcon: const Icon(Icons.lock_outline),
@@ -323,10 +361,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       floatingActionButton: FloatingActionButton(
-        onPressed: _testPrint,
+        onPressed: _printLastClosure,
         backgroundColor: const Color(0xFF6642F8),
-        tooltip: 'Probar Impresora',
-        child: const Icon(Icons.print_rounded, color: Colors.white),
+        tooltip: 'Imprimir último cierre',
+        child: const Icon(Icons.point_of_sale_rounded, color: Colors.white),
       ),
       body: SafeArea(
         child: LayoutBuilder(

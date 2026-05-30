@@ -196,10 +196,15 @@ class MainActivity : FlutterActivity() {
             val usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
             usbManager.deviceList.values.any { device ->
                 when {
-                    // Sin vendor específico: busca cualquier impresora USB (clase 7) — comportamiento original
-                    targetVendorId == -1 -> (0 until device.interfaceCount).any { i ->
-                        device.getInterface(i).interfaceClass == UsbConstants.USB_CLASS_PRINTER
-                    }
+                    // Sin vendor: acepta clase 7 (estándar) O vendor Epson (clase 255)
+                    targetVendorId == -1 ->
+                        device.vendorId == EPSON_VENDOR_ID ||
+                        (0 until device.interfaceCount).any { i ->
+                            device.getInterface(i).interfaceClass == UsbConstants.USB_CLASS_PRINTER
+                        }
+                    // Vendor específico sin producto: cualquier modelo de ese fabricante
+                    targetProductId == -1 -> device.vendorId == targetVendorId
+                    // Coincidencia exacta vendor + producto
                     else -> device.vendorId == targetVendorId && device.productId == targetProductId
                 }
             }

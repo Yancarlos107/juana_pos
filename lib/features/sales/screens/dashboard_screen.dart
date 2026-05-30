@@ -25,7 +25,10 @@ class DashboardScreen extends ConsumerStatefulWidget {
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   int _currentIndex = 0;
-  Product? _selectedProduct;
+  final Map<Product, int> _cart = {};
+
+  int get _cartTotalItems => _cart.values.fold(0, (sum, val) => sum + val);
+  double get _cartTotalValue => _cart.entries.fold(0.0, (sum, entry) => sum + (entry.key.value * entry.value));
 
   @override
   void initState() {
@@ -45,70 +48,138 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     }
   }
 
-  void _processQrSaleMultiple(int quantity) async {
-    if (_selectedProduct == null) {
-      _showSnackBar('Seleccione una tarifa para continuar.',
-          Icons.warning_amber_rounded, Colors.amber.shade800);
-      return;
+  void _showCartSummaryDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.shopping_cart_checkout_rounded, color: Color(0xFF6642F8)),
+            SizedBox(width: 10),
+            Text('Resumen de Venta', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 26)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ..._cart.entries.map((entry) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('${entry.value}x ${entry.key.productName}', style: const TextStyle(fontSize: 20)),
+                    Text('\$ ${_formatCurrency(entry.key.value * entry.value, showDecimals: false)}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              );
+            }).toList(),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Divider(),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Total a cobrar:', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                Text('\$ ${_formatCurrency(_cartTotalValue, showDecimals: false)}', 
+                    style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.green)),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('CANCELAR', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 16)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _processCartSales();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF6642F8),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            ),
+            child: const Text('COBRAR E IMPRIMIR', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _processCartSales() async {
+    if (_cart.isEmpty) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+          child: CircularProgressIndicator(color: Color(0xFF6642F8))),
+    );
+
+    final isPrinterConnected =
+        await ref.read(systemStatusProvider.notifier).checkPrinterNow();
+
+    if (mounted) Navigator.pop(context);
+
+    if (!isPrinterConnected) {
+      final proceed = await _showPrinterWarningDialog();
+      if (!proceed) return;
     }
 
     int successfulPrints = 0;
-    QrPurchaseResult? lastResult;
 
-    for (int i = 0; i < quantity; i++) {
-      final success = await ref
-          .read(qrPurchaseProvider.notifier)
-          .purchase(product: _selectedProduct!);
+    for (final entry in _cart.entries) {
+      final product = entry.key;
+      final quantity = entry.value;
 
-      if (success && mounted) {
-        final result = ref.read(qrPurchaseProvider).result;
+      for (int i = 0; i < quantity; i++) {
+        await ref.read(qrPurchaseProvider.notifier).purchase(product: product);
 
-        final currentBalance = ref.read(balanceProvider).balance;
-        ref
-            .read(balanceProvider.notifier)
-            .updateBalanceState(currentBalance - _selectedProduct!.value);
+        final qrState = ref.read(qrPurchaseProvider);
+        if (qrState.status == QrPurchaseStatus.success && qrState.result != null) {
+          final result = qrState.result!;
+          successfulPrints++;
 
-        if (result != null) {
-          lastResult = result;
-          // Si es venta múltiple imprimimos en lote automáticamente
-          // Si es una sola venta, NO imprimimos automático, dejamos que lo haga desde el modal (como antes)
-          if (quantity > 1) {
-            final pmrLabel = (_selectedProduct?.pmr == true) ? ' [PMR]' : '';
+          if (isPrinterConnected) {
+            final pmrLabel = (product.pmr) ? ' [PMR]' : '';
             final storage = ref.read(localStorageProvider);
             final posName = await storage.getPosLocationName();
             final branchName = posName ?? ref.read(authProvider).user?.branchName;
-            
-            final printSuccess = await ref
-                .read(printerServiceProvider)
-                .printTicket(
+
+            final printResult = await ref.read(printerServiceProvider).printTicket(
                   transactionId: result.transactionId,
-                  amount: _selectedProduct!.value,
+                  amount: product.value,
                   qrData: result.qrCode,
                   cashierName: ref.read(authProvider).user?.name ?? 'Operador',
                   branchName: branchName,
-                  productName: '${_selectedProduct!.productName}$pmrLabel',
+                  productName: '${product.productName}$pmrLabel',
                 );
-            if (printSuccess) {
-              await ref
-                  .read(salesHistoryProvider.notifier)
-                  .markAsPrinted(result.transactionId, 1);
+            if (printResult == true) {
+              await ref.read(salesHistoryProvider.notifier).markAsPrinted(result.transactionId, 1);
             }
-            await Future.delayed(
-                const Duration(milliseconds: 500)); // Pausa entre impresiones
           }
-          successfulPrints++;
-        }
-      } else if (!success && mounted) {
-        final error = ref.read(qrPurchaseProvider).errorMessage ?? '';
-        if (error.contains('Saldo insuficiente')) {
-          _showInsufficientBalanceDialog(error);
         } else {
-          _showSnackBar(error.isEmpty ? 'Error al generar QR' : error,
-              Icons.error, Colors.red);
+          final error = qrState.errorMessage ?? 'Error al generar QR';
+          if (mounted) {
+            if (error.contains('Saldo insuficiente')) {
+              _showInsufficientBalanceDialog(error);
+            } else {
+              _showSnackBar(error, Icons.error, Colors.red);
+            }
+          }
+          _loadBalance();
+          ref.read(salesHistoryProvider.notifier).fetchHistory();
+          return; // Stop on error
         }
-        _loadBalance();
-        ref.read(salesHistoryProvider.notifier).fetchHistory();
-        return; // Detener loop
       }
     }
 
@@ -116,12 +187,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     ref.read(salesHistoryProvider.notifier).fetchHistory();
 
     if (mounted && successfulPrints > 0) {
-      if (quantity == 1 && lastResult != null) {
-        _showQrResultDialog(lastResult);
-      } else {
-        _showSnackBar('Se generaron $successfulPrints ticket(s) exitosamente.',
-            Icons.check_circle, Colors.green);
-      }
+      _showSnackBar('Venta Exitosa: Se generaron $successfulPrints ticket(s).',
+          Icons.check_circle, Colors.green);
+      setState(() {
+        _cart.clear();
+      });
     }
   }
 
@@ -159,142 +229,88 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  void _showQrResultDialog(QrPurchaseResult result) {
+  void _showLogoutDialog() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Row(
           children: [
-            Icon(Icons.check_circle_rounded,
-                color: Color(0xFF6642F8), size: 28),
+            Icon(Icons.logout_rounded, color: Colors.redAccent, size: 28),
             SizedBox(width: 12),
-            Text('¡Venta Exitosa!',
+            Text('¿Cómo deseas salir?',
                 style: TextStyle(
-                    color: Color(0xFF3F3D56), fontWeight: FontWeight.bold)),
+                    color: Color(0xFF3F3D56),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20)),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Escanee el código para abordar',
-                style: TextStyle(color: Colors.grey, fontSize: 13)),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.grey.shade100),
-                boxShadow: [
-                  BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4))
-                ],
-              ),
-              child: QrImageView(
-                data: result.qrCode,
-                version: QrVersions.auto,
-                size: 200.0,
-                gapless: false,
-                eyeStyle: const QrEyeStyle(
-                    eyeShape: QrEyeShape.square, color: Color(0xFF3F3D56)),
-                dataModuleStyle: const QrDataModuleStyle(
-                    dataModuleShape: QrDataModuleShape.square,
-                    color: Color(0xFF3F3D56)),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                  color: const Color(0xFFF5F7FA),
-                  borderRadius: BorderRadius.circular(12)),
-              child: Column(
-                children: [
-                  _infoRow('Transacción', '#${result.transactionId}'),
-                  const Divider(height: 16, color: Colors.white),
-                  _infoRow('Tarifa', _selectedProduct?.productName ?? '—'),
-                  const Divider(height: 16, color: Colors.white),
-                  _infoRow('Valor',
-                      '\$ ${_selectedProduct?.value.toStringAsFixed(0) ?? '—'}'),
-                ],
-              ),
-            ),
-          ],
+        content: const Text(
+          'Puedes cerrar la caja e imprimir el resumen de tu turno, o simplemente salir de la cuenta dejando la caja abierta.',
+          style: TextStyle(fontSize: 16, color: Colors.black87),
         ),
         actions: [
-          if (ref.read(systemStatusProvider).isPrinterConnected)
-            TextButton.icon(
-              onPressed: () async {
-                final pmrLabel =
-                    (_selectedProduct?.pmr == true) ? ' [PMR]' : '';
-                final storage = ref.read(localStorageProvider);
-                final posName = await storage.getPosLocationName();
-                final branchName = posName ?? ref.read(authProvider).user?.branchName;
-
-                final printSuccess =
-                    await ref.read(printerServiceProvider).printTicket(
-                          transactionId: result.transactionId,
-                          amount: _selectedProduct?.value ?? 0,
-                          qrData: result.qrCode,
-                          cashierName:
-                              ref.read(authProvider).user?.name ?? 'Operador',
-                          branchName: branchName,
-                          productName:
-                              '${_selectedProduct?.productName ?? ''}$pmrLabel',
-                        );
-                if (printSuccess) {
-                  await ref
-                      .read(salesHistoryProvider.notifier)
-                      .markAsPrinted(result.transactionId, 1);
-                }
-                if (mounted) Navigator.of(ctx).pop();
-              },
-              icon: const Icon(Icons.print_rounded),
-              label: const Text('IMPRIMIR TICKET'),
-              style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFF6642F8),
-                backgroundColor: const Color(0xFF6642F8).withOpacity(0.1),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text('CANCELAR', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                ),
               ),
-            ),
-          const SizedBox(height: 8),
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child:
-                  const Text('CERRAR', style: TextStyle(color: Colors.grey))),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (_) => const Center(
+                          child: CircularProgressIndicator(color: Color(0xFF6642F8))),
+                    );
+                    await ref.read(authProvider.notifier).logout();
+                    if (mounted) {
+                      Navigator.pop(context);
+                      Navigator.pushReplacementNamed(context, '/login');
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange, // Amarillo oscuro/naranja para que se lea en blanco
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text('SALIR', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    ClosingHelper.showClosingConfirmation(context, ref, isLogout: true);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text('CERRAR CAJA', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                ),
+              ),
+            ],
+          ),
         ],
-        actionsAlignment: MainAxisAlignment.center,
-        actionsPadding: const EdgeInsets.only(bottom: 20, left: 20, right: 20),
       ),
     );
-  }
-
-  Widget _infoRow(String label, String value) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label,
-            style: const TextStyle(
-                color: Colors.grey, fontSize: 13, fontWeight: FontWeight.w500)),
-        Text(value,
-            style: const TextStyle(
-                color: Color(0xFF3F3D56),
-                fontWeight: FontWeight.bold,
-                fontSize: 13)),
-      ],
-    );
-  }
-
-  void _showLogoutDialog(BuildContext context, WidgetRef ref) {
-    ClosingHelper.showClosingConfirmation(context, ref, isLogout: true);
   }
 
   void _showSnackBar(String message, IconData icon, Color color) {
@@ -337,7 +353,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         title: Row(
           children: [
             Image.asset(
-              'assets/Juana-logo.png',
+              'assets/valliu-logo.png',
               height: 32,
               errorBuilder: (ctx, err, stack) => const Icon(
                   Icons.point_of_sale_rounded,
@@ -359,7 +375,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   Text(
                     '\$ ${_formatCurrency(balanceState.balance, showDecimals: false)}',
                     style: const TextStyle(
-                        fontSize: 18,
+                        fontSize: 26, // Aumentado
                         fontWeight: FontWeight.bold,
                         color: Color(0xFF3F3D56)),
                   ),
@@ -380,26 +396,26 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           Icon(Icons.accessible_rounded,
               color:
                   systemStatus.isPmrConnected ? Colors.green : Colors.redAccent,
-              size: 20),
-          const SizedBox(width: 8),
+              size: 40),
+          const SizedBox(width: 16),
           Icon(Icons.camera_alt_rounded,
               color: systemStatus.isCameraConnected
                   ? Colors.green
                   : Colors.redAccent,
-              size: 20),
-          const SizedBox(width: 8),
+              size: 40),
+          const SizedBox(width: 16),
           Icon(Icons.print_rounded,
               color: systemStatus.isPrinterConnected
                   ? Colors.green
                   : Colors.redAccent,
-              size: 20),
-          const SizedBox(width: 8),
+              size: 40),
+          const SizedBox(width: 16),
           Icon(Icons.wifi_rounded,
               color: systemStatus.isInternetConnected
                   ? Colors.green
                   : Colors.redAccent,
-              size: 20),
-          const SizedBox(width: 8),
+              size: 40),
+          const SizedBox(width: 16),
           if (systemStatus.pendingTransactions > 0)
             Center(
               child: Container(
@@ -415,17 +431,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ),
             ),
           const SizedBox(width: 8),
-          IconButton(
-              icon: const Icon(Icons.refresh_rounded, color: Color(0xFF3F3D56)),
-              onPressed: () {
-                _loadBalance();
-                ref.read(productsProvider.notifier).fetchProducts();
-              }),
-          IconButton(
-            icon: const Icon(Icons.logout_rounded, color: Colors.redAccent),
-            onPressed: () => _showLogoutDialog(context, ref),
-          ),
-          const SizedBox(width: 8),
+          // Se removieron los botones de refrescar y logout de la cabecera
         ],
       ),
       body: IndexedStack(index: _currentIndex, children: [
@@ -441,7 +447,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         ]),
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
-          onTap: (i) => setState(() => _currentIndex = i),
+          onTap: (i) {
+            if (i == 2) {
+              _showLogoutDialog();
+            } else {
+              setState(() => _currentIndex = i);
+            }
+          },
           backgroundColor: Colors.white,
           elevation: 0,
           selectedItemColor: const Color(0xFF6642F8),
@@ -451,7 +463,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             BottomNavigationBarItem(
                 icon: Icon(Icons.qr_code_2_rounded), label: 'Ventas QR'),
             BottomNavigationBarItem(
-                icon: Icon(Icons.receipt_long_rounded), label: 'Recaudo')
+                icon: Icon(Icons.receipt_long_rounded), label: 'Recaudo'),
+            BottomNavigationBarItem(
+                icon: Icon(Icons.logout_rounded, color: Colors.redAccent), label: 'Cerrar Sesión')
           ],
         ),
       ),
@@ -460,98 +474,122 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   Widget _buildSalesView(BalanceState balanceState, ProductsState productsState,
       QrPurchaseState qrState) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Sidebar (20%)
-        Container(
-          width: MediaQuery.of(context).size.width * 0.20,
-          padding: const EdgeInsets.only(top: 20, bottom: 20, left: 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
             children: [
-              _buildSidebarButton(
-                icon: Icons.accessible_rounded,
-                label: 'PMR',
-                color: Colors.blue,
-                onPressed: _confirmPmr,
+              Expanded(
+                child: _buildActionButton(
+                  icon: Icons.accessible_rounded,
+                  label: 'PMR',
+                  color: Colors.blue,
+                  onPressed: _confirmPmr,
+                ),
               ),
-              const SizedBox(height: 16),
-              _buildSidebarButton(
-                icon: Icons.warning_rounded,
-                label: 'Pánico',
-                color: Colors.redAccent,
-                onPressed: () async {
-                  // Mostrar loading
-                  showDialog(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (_) => const Center(
-                        child: CircularProgressIndicator(
-                            color: Color(0xFF6642F8))),
-                  );
-
-                  try {
-                    final initService = ref.read(initServiceProvider);
-                    await initService.sendNovelty(1, 'Pánico');
-                    if (mounted) Navigator.pop(context); // Cerrar loading
-                    _showNovedadSuccess('Pánico');
-                  } catch (e) {
-                    if (mounted) Navigator.pop(context); // Cerrar loading
-                    _showSnackBar('Error al reportar pánico: ${e.toString()}',
-                        Icons.error_outline, Colors.redAccent);
-                  }
-                },
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildActionButton(
+                  icon: Icons.warning_rounded,
+                  label: 'Pánico',
+                  color: Colors.redAccent,
+                  onPressed: () async {
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (_) => const Center(
+                          child: CircularProgressIndicator(
+                              color: Color(0xFF6642F8))),
+                    );
+                    try {
+                      final initService = ref.read(initServiceProvider);
+                      await initService.sendNovelty(1, 'Pánico');
+                      if (mounted) Navigator.pop(context);
+                      _showNovedadSuccess('Pánico');
+                    } catch (e) {
+                      if (mounted) Navigator.pop(context);
+                      _showSnackBar('Error al reportar pánico: ${e.toString()}',
+                          Icons.error_outline, Colors.redAccent);
+                    }
+                  },
+                ),
               ),
-              const SizedBox(height: 16),
-              _buildSidebarButton(
-                icon: Icons.report_problem_rounded,
-                label: 'Novedades',
-                color: Colors.orange,
-                onPressed: _showNovedadesModal,
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildActionButton(
+                  icon: Icons.report_problem_rounded,
+                  label: 'Novedades',
+                  color: Colors.orange,
+                  onPressed: _showNovedadesModal,
+                ),
+              ),
+              const SizedBox(width: 12),
+              if (_cart.isNotEmpty) ...[
+                Expanded(
+                  flex: 1,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _cart.clear();
+                      });
+                    },
+                    icon: const Icon(Icons.delete_sweep_rounded),
+                    label: const Text('Limpiar', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      elevation: 2,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                flex: 2,
+                child: ElevatedButton.icon(
+                  onPressed: _cart.isEmpty ? null : _showCartSummaryDialog,
+                  icon: const Icon(Icons.payment_rounded),
+                  label: Text('Confirmar Pago (\$ ${_formatCurrency(_cartTotalValue, showDecimals: false)})', 
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF6642F8),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: Colors.grey.shade300,
+                    disabledForegroundColor: Colors.grey,
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    elevation: _cart.isEmpty ? 0 : 4,
+                  ),
+                ),
               ),
             ],
           ),
-        ),
-        // Contenido Principal (80%)
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildQrSaleCard(productsState, qrState),
-              ],
-            ),
-          ),
-        ),
-      ],
+          const SizedBox(height: 24),
+          _buildQrSaleCard(productsState, qrState),
+        ],
+      ),
     );
   }
 
-  Widget _buildSidebarButton(
+  Widget _buildActionButton(
       {required IconData icon,
       required String label,
       required Color color,
       required VoidCallback onPressed}) {
-    return ElevatedButton(
+    return ElevatedButton.icon(
       onPressed: onPressed,
+      icon: Icon(icon, size: 24),
+      label: Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
       style: ElevatedButton.styleFrom(
         backgroundColor: color,
         foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(vertical: 20),
+        padding: const EdgeInsets.symmetric(vertical: 24),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        elevation: 4,
-        shadowColor: color.withOpacity(0.4),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, size: 32),
-          const SizedBox(height: 8),
-          Text(label,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center),
-        ],
+        elevation: 2,
       ),
     );
   }
@@ -742,10 +780,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   Text('Venta Tickete',
                       style: TextStyle(
                           color: Color(0xFF3F3D56),
-                          fontSize: 18,
+                          fontSize: 22,
                           fontWeight: FontWeight.bold)),
                   Text('Seleccione tarifa',
-                      style: TextStyle(color: Colors.grey, fontSize: 12))
+                      style: TextStyle(color: Colors.grey, fontSize: 16))
                 ]),
           ]),
           const SizedBox(height: 32),
@@ -782,6 +820,22 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
+  void _addToCart(Product product) {
+    setState(() {
+      _cart[product] = (_cart[product] ?? 0) + 1;
+    });
+  }
+
+  void _removeFromCart(Product product) {
+    setState(() {
+      if ((_cart[product] ?? 0) > 1) {
+        _cart[product] = _cart[product]! - 1;
+      } else {
+        _cart.remove(product);
+      }
+    });
+  }
+
   Widget _buildProductCard(Product product) {
     IconData iconData;
     Color iconColor;
@@ -804,16 +858,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       iconColor = const Color(0xFF6642F8);
     }
 
+    final quantity = _cart[product] ?? 0;
+    final isSelected = quantity > 0;
+
     return InkWell(
-      onTap: () => _confirmPurchase(product),
+      onTap: () => _addToCart(product),
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        width: 135,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+        width: 190, // Aún más ancho
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20), // Más padding
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isSelected ? iconColor.withOpacity(0.05) : Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade200),
+          border: Border.all(color: isSelected ? iconColor : Colors.grey.shade200, width: isSelected ? 2 : 1),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.02),
@@ -826,14 +883,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: iconColor.withOpacity(0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(iconData, color: iconColor, size: 24),
+              child: Icon(iconData, color: iconColor, size: 36), // Icono más grande
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Text(
               product.productName,
               textAlign: TextAlign.center,
@@ -842,152 +899,51 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   color: Color(0xFF3F3D56),
-                  fontSize: 13),
+                  fontSize: 18), // Letra de tarifa más grande
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             Text(
               '\$ ${_formatCurrency(product.value, showDecimals: false)}',
               style: const TextStyle(
                   color: Color(0xFF6642F8),
                   fontWeight: FontWeight.w900,
-                  fontSize: 14),
+                  fontSize: 20), // Precio más grande
             ),
+            const SizedBox(height: 16),
+            if (isSelected)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  InkWell(
+                    onTap: () => _removeFromCart(product),
+                    child: Container(
+                      padding: const EdgeInsets.all(12), // Área de toque mucho más grande
+                      decoration: BoxDecoration(
+                          color: Colors.redAccent.withOpacity(0.1),
+                          shape: BoxShape.circle),
+                      child: const Icon(Icons.remove, color: Colors.redAccent, size: 36), // Icono más grande
+                    ),
+                  ),
+                  Text(
+                    quantity.toString(),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 28), // Número más grande
+                  ),
+                  InkWell(
+                    onTap: () => _addToCart(product),
+                    child: Container(
+                      padding: const EdgeInsets.all(12), // Área de toque mucho más grande
+                      decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          shape: BoxShape.circle),
+                      child: const Icon(Icons.add, color: Colors.green, size: 36), // Icono más grande
+                    ),
+                  ),
+                ],
+              )
+            else
+              const SizedBox(height: 44), // Placeholder ajustado
           ],
         ),
-      ),
-    );
-  }
-
-  void _confirmPurchase(Product product) {
-    int quantity = 1;
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (innerContext, setInnerState) {
-          final total = product.value * quantity;
-          return AlertDialog(
-            backgroundColor: Colors.white,
-            surfaceTintColor: Colors.white,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Row(
-              children: [
-                Icon(Icons.shopping_cart_checkout_rounded,
-                    color: Color(0xFF6642F8)),
-                SizedBox(width: 10),
-                Text('Confirmar Venta',
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                RichText(
-                  textAlign: TextAlign.center,
-                  text: TextSpan(
-                    style:
-                        const TextStyle(color: Color(0xFF3F3D56), fontSize: 16),
-                    children: [
-                      const TextSpan(
-                          text: '¿Deseas generar la venta para la tarifa\n'),
-                      TextSpan(
-                          text: '"${product.productName}"',
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                      const TextSpan(text: '?'),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    IconButton(
-                      onPressed: quantity > 1
-                          ? () => setInnerState(() => quantity--)
-                          : null,
-                      icon: Icon(Icons.remove_circle_outline,
-                          color: quantity > 1 ? Colors.redAccent : Colors.grey,
-                          size: 36),
-                    ),
-                    const SizedBox(width: 24),
-                    Text('$quantity',
-                        style: const TextStyle(
-                            fontSize: 28, fontWeight: FontWeight.bold)),
-                    const SizedBox(width: 24),
-                    IconButton(
-                      onPressed: quantity < 20
-                          ? () => setInnerState(() => quantity++)
-                          : null,
-                      icon: Icon(Icons.add_circle_outline,
-                          color: quantity < 20 ? Colors.green : Colors.grey,
-                          size: 36),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  'Total: \$ ${_formatCurrency(total, showDecimals: false)}',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF6642F8),
-                      fontSize: 20),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('CANCELAR',
-                      style: TextStyle(
-                          color: Colors.grey, fontWeight: FontWeight.bold))),
-              ElevatedButton(
-                onPressed: () async {
-                  // Guardamos una referencia segura al root navigator antes de cerrar el dialog
-                  final navigator = Navigator.of(context, rootNavigator: true);
-
-                  // Cerramos el dialog de confirmación
-                  Navigator.pop(ctx);
-
-                  // Abrimos el dialog de carga usando el context principal
-                  showDialog(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (_) => const Center(
-                        child: CircularProgressIndicator(
-                            color: Color(0xFF6642F8))),
-                  );
-
-                  final isPrinterConnected = await ref
-                      .read(systemStatusProvider.notifier)
-                      .checkPrinterNow();
-
-                  // Cerramos el dialog de carga usando el root navigator de forma segura
-                  if (mounted) {
-                    navigator.pop();
-                  }
-
-                  if (!isPrinterConnected) {
-                    final proceed = await _showPrinterWarningDialog();
-                    if (!proceed) return;
-                  }
-
-                  setState(() => _selectedProduct = product);
-                  _processQrSaleMultiple(quantity);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF6642F8),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                ),
-                child: const Text('CONFIRMAR VENTA'),
-              ),
-            ],
-          );
-        },
       ),
     );
   }

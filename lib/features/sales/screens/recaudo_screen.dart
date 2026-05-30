@@ -159,14 +159,14 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
       {required IconData icon, required String label, required String value}) {
     return Column(
       children: [
-        Icon(icon, color: const Color(0xFF6642F8), size: 24),
-        const SizedBox(height: 6),
+        Icon(icon, color: const Color(0xFF6642F8), size: 32),
+        const SizedBox(height: 8),
         Text(value,
             style: const TextStyle(
                 color: Color(0xFF3F3D56),
-                fontSize: 18,
+                fontSize: 26,
                 fontWeight: FontWeight.bold)),
-        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 11)),
+        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 14)),
       ],
     );
   }
@@ -216,8 +216,22 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
   }
 
   Widget _buildTransactionTile(Map<String, dynamic> sale) {
-    final isClosed = sale['is_closed'] == true;
     final printStatus = sale['print_status'] as int? ?? 0;
+    
+    // Convertir 'created_at' de ISO 8601 a un formato corto (ej: 2026-05-28 14:30)
+    final String dateStr = sale['created_at']?.toString() ?? '';
+    String timeOnly = dateStr;
+    try {
+      if (dateStr.isNotEmpty) {
+        final parsed = DateTime.parse(dateStr);
+        timeOnly = "${parsed.year}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')} ${parsed.hour.toString().padLeft(2, '0')}:${parsed.minute.toString().padLeft(2, '0')}";
+      }
+    } catch (_) {}
+
+    final String product = sale['product_name'] ?? sale['product_id'] ?? 'TARIFA';
+    final double amount = (sale['amount'] as num?)?.toDouble() ?? 0;
+    final bool isClosed = sale['is_closed'] == true;
+    final String statusText = isClosed ? ' (CERRADO)' : '';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -232,99 +246,58 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
                 offset: const Offset(0, 2))
           ]),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                  color: const Color(0xFFF5F7FA),
-                  borderRadius: BorderRadius.circular(12)),
-              child:
-                  const Icon(Icons.qr_code_rounded, color: Color(0xFF6642F8))),
-          const SizedBox(width: 16),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Transacción #${sale['id'] ?? '—'}',
-                    style: const TextStyle(
-                        color: Color(0xFF3F3D56),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15)),
-                Row(
-                  children: [
-                    Text(sale['created_at']?.toString() ?? '',
-                        style:
-                            const TextStyle(color: Colors.grey, fontSize: 12)),
-                    if (isClosed)
-                      const Padding(
-                        padding: EdgeInsets.only(left: 6),
-                        child: Text('[CERRADA]',
-                            style: TextStyle(
-                                color: Colors.redAccent,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold)),
-                      ),
-                  ],
-                ),
-              ],
+            child: Text(
+              '$timeOnly - $product - \$ ${_formatCurrency(amount)}$statusText',
+              style: TextStyle(
+                  color: isClosed ? Colors.red : const Color(0xFF3F3D56),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15),
             ),
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                  '\$ ${_formatCurrency((sale['amount'] as num?)?.toDouble() ?? 0)}',
-                  style: TextStyle(
-                      color: isClosed ? Colors.grey : const Color(0xFF6642F8),
-                      fontWeight: FontWeight.w900,
-                      fontSize: 18)),
-              if (printStatus < 2) ...[
-                const SizedBox(height: 4),
-                InkWell(
-                  onTap: () => _handlePrint(sale),
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: printStatus == 0
-                          ? Colors.green.withOpacity(0.1)
-                          : Colors.orange.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                            printStatus == 0
-                                ? Icons.print_rounded
-                                : Icons.replay_rounded,
-                            size: 14,
+          if (printStatus < 2 || product == 'CIERRE DE CAJA')
+            InkWell(
+              onTap: () => _handlePrint(sale),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: printStatus == 0
+                      ? Colors.green.withOpacity(0.1)
+                      : Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                        printStatus == 0
+                            ? Icons.print_rounded
+                            : Icons.replay_rounded,
+                        size: 16,
+                        color: printStatus == 0
+                            ? Colors.green
+                            : Colors.orange),
+                    const SizedBox(width: 6),
+                    Text(printStatus == 0 ? 'IMPRIMIR' : 'REIMPRIMIR',
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
                             color: printStatus == 0
                                 ? Colors.green
-                                : Colors.orange),
-                        const SizedBox(width: 4),
-                        Text(printStatus == 0 ? 'Imprimir' : 'Reimprimir',
-                            style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: printStatus == 0
-                                    ? Colors.green
-                                    : Colors.orange)),
-                      ],
-                    ),
-                  ),
+                                : Colors.orange)),
+                  ],
                 ),
-              ] else ...[
-                const SizedBox(height: 4),
-                const Text('Reimpreso',
-                    style: TextStyle(
-                        color: Colors.grey,
-                        fontSize: 12,
-                        fontStyle: FontStyle.italic)),
-              ]
-            ],
-          ),
+              ),
+            )
+          else
+            const Text('REIMPRESO',
+                style: TextStyle(
+                    color: Colors.redAccent,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -368,21 +341,57 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
     final isReprint = printStatus == 1;
 
     final printer = ref.read(printerServiceProvider);
-    final success = await printer.printTicket(
-      transactionId: transactionId,
-      amount: amount,
-      qrData: qrData,
-      cashierName: cashierName,
-      branchName: branchName,
-      productName: prod.productName,
-      isReprint: isReprint,
-    );
+    bool? printResult;
 
+    if (pId == 'CIERRE DE CAJA') {
+      try {
+        final jsonStr = utf8.decode(base64Decode(qrData));
+        final data = jsonDecode(jsonStr);
+        printResult = await printer.printClosingTicket(
+          cashierName: data['c']?.toString() ?? cashierName,
+          branchName: branchName,
+          totalTransactions: data['q'] ?? 0,
+          totalAmount: (data['a'] as num?)?.toDouble() ?? amount,
+          startTime: 'Turno',
+          endTime: data['d']?.toString() ?? '',
+          qrData: qrData,
+          pmrCount: data['pmr_q'] ?? 0,
+          reprintsCount: printStatus,
+        );
+      } catch (e) {
+        printResult = false;
+      }
+    } else {
+      printResult = await printer.printTicket(
+        transactionId: transactionId,
+        amount: amount,
+        qrData: qrData,
+        cashierName: cashierName,
+        branchName: branchName,
+        productName: prod.productName,
+        isReprint: isReprint,
+      );
+    }
+
+    // null = permiso USB pendiente (Epson): el usuario debe aceptar el diálogo y reintentar
+    if (printResult == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Acepta el permiso USB e intenta de nuevo'),
+            backgroundColor: Colors.orange));
+      }
+      return;
+    }
+
+    final success = printResult;
     if (success) {
-      final newStatus = printStatus == 0 ? 1 : 2;
-      await ref
-          .read(salesHistoryProvider.notifier)
-          .markAsPrinted(transactionId, newStatus);
+      if (pId == 'CIERRE DE CAJA') {
+        // Incrementamos el print_status pero nunca lo bloqueamos
+        await ref.read(salesHistoryProvider.notifier).markAsPrinted(transactionId, printStatus + 1);
+      } else {
+        final newStatus = printStatus == 0 ? 1 : 2;
+        await ref.read(salesHistoryProvider.notifier).markAsPrinted(transactionId, newStatus);
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content:

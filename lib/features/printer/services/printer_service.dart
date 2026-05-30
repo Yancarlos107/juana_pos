@@ -4,10 +4,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_thermal_printer/flutter_thermal_printer.dart';
 import 'package:flutter_thermal_printer/utils/printer.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'epson_epos_service.dart';
 
 /// Servicio de impresión térmica POS vía USB.
+/// Detecta automáticamente si hay una impresora Epson (vendor 0x04B8) y usa
+/// USB Host API directo. Para otras impresoras usa flutter_thermal_printer.
 class PrinterService {
   final FlutterThermalPrinter _printer = FlutterThermalPrinter.instance;
+  final EpsonEposService _epsonService = EpsonEposService();
   Printer? _connectedPrinter;
   static const _platform = MethodChannel('co.Juana.usb/status');
 
@@ -25,6 +29,18 @@ class PrinterService {
     } catch (e) {
       print('DEBUG: Error native check, asumiendo true por seguridad: $e');
       return true;
+    }
+  }
+
+  // Vendor ID 1208 = 0x04B8 = Seiko Epson Corp.
+  Future<bool> _isEpsonConnected() async {
+    try {
+      return await _platform.invokeMethod('isUsbDeviceConnected', {
+        'vendorId': 1208,
+        'productId': -1,
+      });
+    } catch (_) {
+      return false;
     }
   }
 
@@ -186,7 +202,8 @@ class PrinterService {
 
   // ==================== Impresión x RAW Bytes ====================
 
-  Future<bool> printTicket({
+  // bool?  → null significa permiso USB pendiente (solo Epson), true/false éxito/fallo
+  Future<bool?> printTicket({
     required String transactionId,
     required double amount,
     required String qrData,
@@ -198,16 +215,9 @@ class PrinterService {
   }) async {
     print('DEBUG: Iniciando impresión de venta...');
     try {
-      // SIEMPRE validamos el hardware real primero
       final hardwareConnected = await checkHardwareConnection();
       if (!hardwareConnected) {
         print('DEBUG: Hardware desconectado abortando printTicket.');
-        return false;
-      }
-
-      final connected = await connectToFirstUsb();
-      if (!connected) {
-        print('DEBUG: No se pudo establecer conexión USB para el ticket');
         return false;
       }
 
@@ -261,15 +271,22 @@ class PrinterService {
       bytes.addAll(
           _text('\n')); // Solo un salto para que termine de imprimir el QR
 
-      bytes.addAll([
-        0x1B,
-        0x64,
-        0x02
-      ]); // Alimentar solo 2 líneas en lugar de 4 para reducir el espacio en blanco
+      bytes.addAll([0x1B, 0x64, 0x02]);        // 2 saltos
       bytes.addAll([0x1D, 0x56, 0x42, 0x00]); // Cortar papel
 
-      if (_connectedPrinter == null) return false;
+      final epson = await _isEpsonConnected();
+      if (epson) {
+        print('DEBUG: Enviando ticket vía USB Host API (Epson)...');
+        return await _epsonService.printBytes(Uint8List.fromList(bytes));
+      }
 
+      // Ruta flutter_thermal_printer para otras impresoras
+      final connected = await connectToFirstUsb();
+      if (!connected) {
+        print('DEBUG: No se pudo establecer conexión USB para el ticket');
+        return false;
+      }
+      if (_connectedPrinter == null) return false;
       await _printer.printData(_connectedPrinter!, Uint8List.fromList(bytes));
       print('DEBUG: Impresión de ticket completada');
       return true;
@@ -279,8 +296,8 @@ class PrinterService {
     }
   }
 
-  /// Imprime ticket de cierre usando comandos RAW (Conexión forzada).
-  Future<bool> printClosingTicket({
+  /// Imprime ticket de cierre. Retorna null si se requiere permiso USB (Epson).
+  Future<bool?> printClosingTicket({
     required String cashierName,
     required String branchName,
     required int totalTransactions,
@@ -299,12 +316,6 @@ class PrinterService {
       final hardwareConnected = await checkHardwareConnection();
       if (!hardwareConnected) {
         print('DEBUG: Hardware desconectado abortando cierre.');
-        return false;
-      }
-
-      final connected = await connectToFirstUsb();
-      if (!connected) {
-        print('DEBUG: No se pudo establecer conexión USB para el cierre');
         return false;
       }
 
@@ -357,6 +368,17 @@ class PrinterService {
       bytes.addAll([0x1B, 0x64, 0x02]);
       bytes.addAll([0x1D, 0x56, 0x42, 0x00]);
 
+      final epson = await _isEpsonConnected();
+      if (epson) {
+        print('DEBUG: Enviando cierre vía USB Host API (Epson)...');
+        return await _epsonService.printBytes(Uint8List.fromList(bytes));
+      }
+
+      final connected = await connectToFirstUsb();
+      if (!connected) {
+        print('DEBUG: No se pudo establecer conexión USB para el cierre');
+        return false;
+      }
       if (_connectedPrinter == null) return false;
       await _printer.printData(_connectedPrinter!, Uint8List.fromList(bytes));
       print('DEBUG: Cierre impreso exitosamente');

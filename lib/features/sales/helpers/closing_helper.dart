@@ -7,6 +7,7 @@ import '../../auth/providers/auth_providers.dart';
 import '../../auth/services/session_service.dart';
 import '../../../core/storage/local_storage_repository.dart';
 import '../../../core/network/dio_client.dart';
+import '../../../core/database/database_helper.dart';
 import '../models/tarifa_model.dart';
 import '../../monitoring/services/system_status_service.dart';
 
@@ -60,10 +61,10 @@ class ClosingHelper {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text('${qty}x ${prod.productName}',
-                style: const TextStyle(fontSize: 14)),
+                style: const TextStyle(fontSize: 22)),
             Text('\$ ${formatCurrency(qty * prod.value)}',
                 style:
-                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 22)),
           ],
         ),
       ));
@@ -80,7 +81,7 @@ class ClosingHelper {
             Icon(Icons.summarize_rounded, color: isLogout ? Colors.redAccent : const Color(0xFF6642F8)),
             const SizedBox(width: 10),
             Text(isLogout ? 'Cierre antes de salir' : 'Resumen de Cierre',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 24)),
           ],
         ),
         content: Column(
@@ -111,10 +112,10 @@ class ClosingHelper {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('Transacciones (Ventas):',
-                          style: TextStyle(color: Colors.grey, fontSize: 14)),
+                          style: TextStyle(color: Colors.grey, fontSize: 22)),
                       Text('${unclosedSales.length - pmrCount}',
                           style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 15)),
+                              fontWeight: FontWeight.bold, fontSize: 22)),
                     ],
                   ),
                   if (pmrCount > 0) ...[
@@ -123,12 +124,12 @@ class ClosingHelper {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text('Aperturas PMR:',
-                            style: TextStyle(color: Colors.blue, fontSize: 14)),
+                            style: TextStyle(color: Colors.blue, fontSize: 22)),
                         Text('$pmrCount',
                             style: const TextStyle(
                                 color: Colors.blue,
                                 fontWeight: FontWeight.bold,
-                                fontSize: 15)),
+                                fontSize: 22)),
                       ],
                     ),
                   ],
@@ -139,12 +140,12 @@ class ClosingHelper {
                       children: [
                         const Text('Reimpresiones:',
                             style:
-                                TextStyle(color: Colors.orange, fontSize: 14)),
+                                TextStyle(color: Colors.orange, fontSize: 22)),
                         Text('$reprintsCount',
                             style: const TextStyle(
                                 color: Colors.orange,
                                 fontWeight: FontWeight.bold,
-                                fontSize: 15)),
+                                fontSize: 22)),
                       ],
                     ),
                   ],
@@ -154,12 +155,12 @@ class ClosingHelper {
                     children: [
                       const Text('Total Recaudado:',
                           style: TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16)),
+                              fontWeight: FontWeight.bold, fontSize: 28)),
                       Text('\$ ${formatCurrency(totalAmount)}',
                           style: TextStyle(
                               color: isLogout ? Colors.redAccent : const Color(0xFF6642F8),
                               fontWeight: FontWeight.w900,
-                              fontSize: 18)),
+                              fontSize: 38)),
                     ],
                   ),
                 ],
@@ -172,7 +173,7 @@ class ClosingHelper {
               onPressed: () => Navigator.pop(ctx),
               child: const Text('CANCELAR',
                   style: TextStyle(
-                      color: Colors.grey, fontWeight: FontWeight.bold))),
+                      color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 16))),
           ElevatedButton.icon(
             onPressed: () async {
               Navigator.pop(ctx);
@@ -198,13 +199,13 @@ class ClosingHelper {
               _performClosing(context, ref, isLogout);
             },
             icon: const Icon(Icons.print_rounded, size: 20),
-            label: Text(isLogout ? 'CERRAR E IMPRIMIR' : 'CONFIRMAR'),
+            label: Text(isLogout ? 'CERRAR E IMPRIMIR' : 'CONFIRMAR', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             style: ElevatedButton.styleFrom(
               backgroundColor: isLogout ? Colors.redAccent : const Color(0xFF6642F8),
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10)),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             ),
           ),
         ],
@@ -284,6 +285,7 @@ class ClosingHelper {
     List<String> pmrHours = [];
 
     for (final sale in unclosedSales) {
+      if (sale['product_id'] == 'CIERRE DE CAJA') continue;
       if (sale['print_status'] == 2) {
         reprintsCount++;
       }
@@ -344,9 +346,9 @@ class ClosingHelper {
         barrierDismissible: false,
         builder: (ctx) => const Center(child: CircularProgressIndicator()));
 
-    // Imprimir
+    // Imprimir — null = permiso USB pendiente (Epson)
     final printer = ref.read(printerServiceProvider);
-    final printSuccess = await printer.printClosingTicket(
+    final printResult = await printer.printClosingTicket(
       cashierName: cashierName,
       branchName: branchName,
       totalTransactions: unclosedSales.length - pmrCount,
@@ -360,35 +362,59 @@ class ClosingHelper {
       reprintsCount: reprintsCount,
     );
 
+    if (printResult == null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Acepta el permiso USB e intenta el cierre de nuevo'),
+          backgroundColor: Colors.orange));
+      Navigator.pop(context);
+      return;
+    }
+    final printSuccess = printResult ?? false;
+
     if (context.mounted) Navigator.pop(context); // Quitar loader
 
-    if (printSuccess) {
-      try {
-        await ref.read(sessionServiceProvider).closeSession(branchId);
-        
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('Cierre de caja procesado (Local)'),
-              backgroundColor: Colors.green));
-        }
+    try {
+      final db = await DatabaseHelper.instance.database;
+      final sessionQuery = await db.query('sessions', where: 'status = ?', whereArgs: ['open']);
+      final int? sessionId = sessionQuery.isNotEmpty ? sessionQuery.first['id'] as int : null;
 
-        if (isLogout) {
-          _executeLogout(context, ref);
-        } else {
-          ref.read(salesHistoryProvider.notifier).fetchHistory();
-        }
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Error al cerrar caja: ${e.toString()}'),
-              backgroundColor: Colors.redAccent));
-        }
+      await db.insert('transactions', {
+        'id': 'CIERRE-${DateTime.now().millisecondsSinceEpoch}',
+        'session_id': sessionId,
+        'product_id': 'CIERRE DE CAJA',
+        'amount': totalAmount,
+        'pmr': 0,
+        'status': 'synced',
+        'created_at': DateTime.now().toIso8601String(),
+        'qr_data': qrData,
+      });
+
+      await ref.read(sessionServiceProvider).closeSession(branchId);
+      
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Cierre de caja procesado (Local)'),
+            backgroundColor: Colors.green));
       }
-    } else {
+
+      if (isLogout) {
+        _executeLogout(context, ref);
+      } else {
+        ref.read(salesHistoryProvider.notifier).fetchHistory();
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Error al cerrar caja: ${e.toString()}'),
+            backgroundColor: Colors.redAccent));
+      }
+    }
+
+    if (!printSuccess) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('No se pudo imprimir el cierre'),
-            backgroundColor: Colors.redAccent));
+            backgroundColor: Colors.orange));
       }
     }
   }
