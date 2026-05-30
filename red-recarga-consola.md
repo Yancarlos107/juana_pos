@@ -427,3 +427,18 @@ En el menú de **Reportes** del back‑office existe una entrada relacionada con
 
 Este documento sirve como referencia rápida para desarrolladores y analistas que necesiten entender y trazar el comportamiento de la **consola de Red de Recarga** y las **ventas PAX QR** desde el frontend hasta los endpoints de backend que consume.
 
+---
+
+#### 9. Funcionalidades Nativas del POS (Flutter)
+
+Adicional al comportamiento del back-office en la web, la aplicación móvil POS (Flutter) implementa las siguientes reglas específicas de negocio:
+
+**9.1. Modo Offline Robusto para Impresión de Cierres**
+- La aplicación permite la impresión de cierres de caja sin conexión a internet.
+- El inicio de sesión en modo offline verifica las credenciales haciendo *fallback* a la base de datos local (SQLite - tabla `users`).
+- Una vez autorizado el usuario, el reporte de cierre se extrae directamente de la base de datos local (tabla `transactions`), asegurando que las terminales puedan operar y cerrar turnos aún en zonas sin cobertura.
+
+**9.2. Interfaz Optimizada para la Operación Diaria**
+- **Novedades:** Interfaz visual con alto contraste para asegurar la legibilidad por parte de los cajeros.
+- **Botones de Cancelación:** Homologados en toda la app para no tener fondo y usar un color neutro (gris oscuro), evitando confusiones con acciones destructivas.
+- **Cierre de Sesión:** Separación visual estricta mediante códigos de colores ("Salir" en rojo, "Cerrar Caja" en naranja) para prevenir cierres accidentales.

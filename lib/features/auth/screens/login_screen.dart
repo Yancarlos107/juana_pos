@@ -87,7 +87,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _printLastClosure() async {
-    print('DEBUG: Iniciando _printLastClosure...');
+    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ingresa tu usuario y contraseña para autorizar la impresión', style: TextStyle(fontWeight: FontWeight.bold)),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    print('DEBUG: Iniciando _printLastClosure con validación de usuario...');
     final printer = ref.read(printerServiceProvider);
 
     showDialog(
@@ -102,7 +112,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               children: [
                 CircularProgressIndicator(color: Color(0xFF6642F8)),
                 SizedBox(height: 16),
-                Text('Buscando impresora y cierre...',
+                Text('Validando y buscando cierre...',
                     style: TextStyle(fontWeight: FontWeight.bold)),
               ],
             ),
@@ -111,6 +121,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ),
     );
 
+    // 1. Validar Credenciales
+    await ref.read(authProvider.notifier).login(
+          _emailController.text.trim(),
+          _passwordController.text.trim(),
+        );
+
+    final authState = ref.read(authProvider);
+    if (authState.status != AuthStatus.authenticated) {
+      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Credenciales incorrectas o sin red', style: TextStyle(fontWeight: FontWeight.bold)),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    // 2. Proceder con la impresión
     bool success = false;
     String errorMessage = 'No hay cierres guardados';
 
@@ -151,6 +182,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } catch (e) {
       errorMessage = 'Error al leer el cierre: $e';
     }
+
+    // 3. Cerrar sesión automáticamente tras autorizar la impresión
+    await ref.read(authProvider.notifier).logout();
 
     if (mounted) Navigator.of(context).pop();
 

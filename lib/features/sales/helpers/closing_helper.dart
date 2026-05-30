@@ -171,9 +171,9 @@ class ClosingHelper {
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('CANCELAR',
+              child: Text('CANCELAR',
                   style: TextStyle(
-                      color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 16))),
+                      color: Colors.grey.shade800, fontWeight: FontWeight.bold, fontSize: 16))),
           ElevatedButton.icon(
             onPressed: () async {
               Navigator.pop(ctx);

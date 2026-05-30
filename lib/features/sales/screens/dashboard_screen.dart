@@ -95,7 +95,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('CANCELAR', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 16)),
+            child: Text('CANCELAR', style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.bold, fontSize: 16)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -256,11 +256,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               Expanded(
-                child: ElevatedButton(
+                child: TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.grey.shade800,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                   child: const Text('CANCELAR', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
@@ -284,7 +283,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     }
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange, // Amarillo oscuro/naranja para que se lea en blanco
+                    backgroundColor: Colors.redAccent,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
@@ -299,7 +298,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     ClosingHelper.showClosingConfirmation(context, ref, isLogout: true);
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.redAccent,
+                    backgroundColor: Colors.orange,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
@@ -625,7 +624,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               final novedad = novelties[index];
               return ListTile(
                 title: Text(novedad.name,
-                    style: const TextStyle(fontWeight: FontWeight.w500)),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22)),
                 trailing:
                     const Icon(Icons.chevron_right_rounded, color: Colors.grey),
                 onTap: () async {
@@ -655,11 +654,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ),
         ),
         actions: [
-          TextButton(
+          ElevatedButton(
               onPressed: () => Navigator.pop(ctx),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6642F8),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
               child: const Text('CERRAR',
-                  style: TextStyle(
-                      color: Colors.grey, fontWeight: FontWeight.bold))),
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
         ],
       ),
     );

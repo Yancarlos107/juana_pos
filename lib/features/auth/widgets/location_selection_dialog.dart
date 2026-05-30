@@ -167,7 +167,7 @@ class _LocationSelectionDialogState extends ConsumerState<LocationSelectionDialo
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
               style: TextButton.styleFrom(
-                foregroundColor: Colors.grey,
+                foregroundColor: Colors.grey.shade800,
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
               child: const Text('CANCELAR', style: TextStyle(fontWeight: FontWeight.bold)),
