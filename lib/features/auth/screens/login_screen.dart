@@ -6,6 +6,7 @@ import '../../../core/storage/local_storage_repository.dart';
 import '../widgets/location_selection_dialog.dart';
 import '../../sales/services/closure_service.dart';
 import '../../../core/database/database_helper.dart';
+import '../../monitoring/services/system_status_service.dart';
 import 'dart:convert';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -391,9 +392,48 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
+    final systemStatus = ref.watch(systemStatusProvider);
 
     return Scaffold(
       backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.white,
+        actions: [
+          Icon(Icons.accessible_rounded,
+              color: systemStatus.isPmrConnected ? Colors.green : Colors.redAccent,
+              size: 40),
+          const SizedBox(width: 16),
+          Icon(Icons.camera_alt_rounded,
+              color: systemStatus.isCameraConnected ? Colors.green : Colors.redAccent,
+              size: 40),
+          const SizedBox(width: 16),
+          Icon(Icons.print_rounded,
+              color: systemStatus.isPrinterConnected ? Colors.green : Colors.redAccent,
+              size: 40),
+          const SizedBox(width: 16),
+          Icon(Icons.wifi_rounded,
+              color: systemStatus.isInternetConnected ? Colors.green : Colors.redAccent,
+              size: 40),
+          const SizedBox(width: 16),
+          if (systemStatus.pendingTransactions > 0)
+            Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                    color: Colors.orange,
+                    borderRadius: BorderRadius.circular(16)),
+                child: Text('${systemStatus.pendingTransactions}',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18)),
+              ),
+            ),
+          const SizedBox(width: 8),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _printLastClosure,
         backgroundColor: const Color(0xFF6642F8),
