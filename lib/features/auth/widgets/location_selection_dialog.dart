@@ -28,8 +28,22 @@ class _LocationSelectionDialogState extends ConsumerState<LocationSelectionDialo
     try {
       final initService = ref.read(initServiceProvider);
       final data = await initService.initializePOS();
+      List<PosLocationModel> loadedLocations = List.from(data['locations'] as List<PosLocationModel>);
+      
+      // Mover al principio la sucursal del usuario actual
+      final authState = ref.read(authProvider);
+      final userBranchId = authState.user?.branchId;
+      
+      if (userBranchId != null) {
+        final userLocationIndex = loadedLocations.indexWhere((loc) => loc.id == userBranchId);
+        if (userLocationIndex != -1) {
+          final userLocation = loadedLocations.removeAt(userLocationIndex);
+          loadedLocations.insert(0, userLocation);
+        }
+      }
+
       setState(() {
-        _locations = data['locations'] as List<PosLocationModel>;
+        _locations = loadedLocations;
         _isLoading = false;
       });
     } catch (e) {
@@ -120,39 +134,50 @@ class _LocationSelectionDialogState extends ConsumerState<LocationSelectionDialo
                   separatorBuilder: (_, __) => const SizedBox(height: 12),
                   itemBuilder: (context, index) {
                     final location = _locations[index];
+                    final isUserBranch = ref.read(authProvider).user?.branchId == location.id;
                     return InkWell(
                       onTap: () => _selectLocation(location),
                       borderRadius: BorderRadius.circular(12),
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                         decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey.shade300),
+                          border: Border.all(color: isUserBranch ? Colors.blue.shade300 : Colors.grey.shade300, width: isUserBranch ? 2 : 1),
                           borderRadius: BorderRadius.circular(12),
-                          color: Colors.white,
+                          color: isUserBranch ? Colors.blue.shade50 : Colors.white,
                         ),
                         child: Row(
                           children: [
                             Container(
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF6642F8).withOpacity(0.1),
+                                color: isUserBranch ? Colors.blue.withOpacity(0.2) : const Color(0xFF6642F8).withOpacity(0.1),
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(
-                                Icons.storefront_rounded,
-                                color: Color(0xFF6642F8),
+                              child: Icon(
+                                isUserBranch ? Icons.person_pin_circle_rounded : Icons.storefront_rounded,
+                                color: isUserBranch ? Colors.blue.shade700 : const Color(0xFF6642F8),
                                 size: 24,
                               ),
                             ),
                             const SizedBox(width: 16),
                             Expanded(
-                              child: Text(
-                                location.name,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF3F3D56),
-                                ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    location.name,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: isUserBranch ? Colors.blue.shade900 : const Color(0xFF3F3D56),
+                                    ),
+                                  ),
+                                  if (isUserBranch)
+                                    Text(
+                                      'Punto Asignado',
+                                      style: TextStyle(color: Colors.blue.shade700, fontSize: 12, fontWeight: FontWeight.bold),
+                                    )
+                                ],
                               ),
                             ),
                             const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.grey),

@@ -88,15 +88,7 @@ class BackgroundSyncService {
         "ver": "1.0.0"
       };
 
-      // Log visual de intento de envío para QA
-      scaffoldMessengerKey.currentState?.showSnackBar(
-        SnackBar(
-          content: Text('Intentando enviar ${pending.length} tramas a RC173...', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
-          backgroundColor: Colors.blueAccent,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-
+      // Log visual removido para no afectar UX en producción
       // Endpoint de transacciones
       final response = await _dio.post('/pos-transactions', data: payload);
 
@@ -112,15 +104,7 @@ class BackgroundSyncService {
         // Actualizar UI inmediatamente
         _ref.read(systemStatusProvider.notifier).forceCheckPendingTransactions();
         
-        // Log visual para QA
-        scaffoldMessengerKey.currentState?.showSnackBar(
-          SnackBar(
-            content: Text('Sincronización masiva exitosa: ${pending.length} transacciones enviadas al servidor.', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-
+        // Log visual removido
         print('DEBUG: ${pending.length} ventas offline sincronizadas masivamente (RC173).');
       }
     } catch (e) {
@@ -140,14 +124,6 @@ class BackgroundSyncService {
         }
       }
 
-      // Log visual de error para QA
-      scaffoldMessengerKey.currentState?.showSnackBar(
-        SnackBar(
-          content: Text('Fallo RC173: $errorMessage', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          backgroundColor: Colors.redAccent,
-          duration: const Duration(seconds: 8), // Más tiempo para que puedan tomar pantallazo
-        ),
-      );
       print('DEBUG: Fallo al sincronizar tramas masivas RC173: $e');
       // Quedan en pending para el próximo intento
     }

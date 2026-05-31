@@ -541,7 +541,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     icon: const Icon(Icons.delete_sweep_rounded),
                     label: const Text('Limpiar', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.redAccent,
+                      backgroundColor: Colors.blueGrey,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 24),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -799,24 +799,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 ]),
           ]),
           const SizedBox(height: 32),
-          if (isLoading)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 40),
-              child: Column(
-                children: [
-                  CircularProgressIndicator(color: Color(0xFF6642F8)),
-                  SizedBox(height: 16),
-                  Text('Procesando Venta...',
-                      style: TextStyle(
-                          color: Colors.grey, fontWeight: FontWeight.bold)),
-                ],
-              ),
-            )
-          else if (productsState.status == ProductsStatus.loading)
-            const Center(
-                child: CircularProgressIndicator(color: Color(0xFF6642F8)))
-          else if (productsState.status == ProductsStatus.error)
-            Text(productsState.errorMessage ?? 'Error',
+          if (productsState.status == ProductsStatus.error && productsState.products.isEmpty)
+            Text(productsState.errorMessage ?? 'Error al cargar tarifas',
                 style: const TextStyle(color: Colors.redAccent))
           else
             Wrap(
