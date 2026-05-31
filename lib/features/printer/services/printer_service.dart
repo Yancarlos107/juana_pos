@@ -247,7 +247,7 @@ class PrinterService {
       }
 
       bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
-      bytes.addAll(_text('Fecha: $dateStr\n'));
+      bytes.addAll(_text('Fecha: $dateStr $timeStr\n'));
       bytes.addAll(_text('Serial: $transactionId\n'));
 
       bytes.addAll([0x1B, 0x45, 0x01]); // Bold
