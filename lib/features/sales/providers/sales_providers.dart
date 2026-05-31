@@ -1,4 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:convert';
+import 'dart:math';
+
 import '../../../core/network/dio_client.dart';
 import '../../../core/storage/local_storage_repository.dart';
 import '../../../core/database/database_helper.dart';
@@ -236,8 +239,14 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
 
       // Se fuerza SIEMPRE la generación offline
       final localId = "OFF-${DateTime.now().microsecondsSinceEpoch}";
+      
+      final chars = 'abcdef0123456789';
+      final random = Random();
+      final qrCodeStr = String.fromCharCodes(Iterable.generate(
+          32, (_) => chars.codeUnitAt(random.nextInt(chars.length))));
+
       final result = QrPurchaseResult(
-        qrCode: '{"id":"$localId","product_id":"${product.id}","value":${product.value},"offline":true}',
+        qrCode: qrCodeStr,
         transactionId: localId,
         yourNewBalance: currentBalance - product.value,
         rawData: {},

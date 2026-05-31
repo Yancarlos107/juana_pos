@@ -67,7 +67,7 @@ class BackgroundSyncService {
           "qr": tx['qr_data'],
           "cashierid": cashierid,
           "expiredtime": 60,
-          "fareid": tx['product_id'],
+          "fareid": 1,
           "productid": tx['product_id'],
           "versionid": 1,
           "datetime": DateTime.parse(tx['created_at'].toString()).millisecondsSinceEpoch ~/ 1000
