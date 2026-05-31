@@ -26,7 +26,7 @@ class UserModel {
     final rolesList = json['roles'] as List? ?? ['cashier'];
 
     return UserModel(
-      id: int.tryParse(userMap['id']?.toString() ?? '0') ?? 0,
+      id: int.tryParse(cashierMap['id']?.toString() ?? userMap['id']?.toString() ?? '0') ?? 0,
       name: userMap['name']?.toString() ??
           cashierMap['name']?.toString() ??
           'Cajero',
