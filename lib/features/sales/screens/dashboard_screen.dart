@@ -26,6 +26,7 @@ class DashboardScreen extends ConsumerStatefulWidget {
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   int _currentIndex = 0;
   final Map<Product, int> _cart = {};
+  String _posName = 'Estación';
 
   int get _cartTotalItems => _cart.values.fold(0, (sum, val) => sum + val);
   double get _cartTotalValue => _cart.entries.fold(0.0, (sum, entry) => sum + (entry.key.value * entry.value));
@@ -33,11 +34,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       // Cargamos el saldo local inmediatamente para evitar parpadeos
       ref.read(balanceProvider.notifier).loadLocalBalance();
       _loadBalance();
       ref.read(productsProvider.notifier).fetchProducts();
+
+      final storage = ref.read(localStorageProvider);
+      final posName = await storage.getPosLocationName();
+      if (mounted) {
+        setState(() {
+          _posName = posName ?? ref.read(authProvider).user?.branchName ?? 'Estación';
+        });
+      }
     });
   }
 
@@ -359,35 +368,47 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   color: Color(0xFF6642F8)),
             ),
             const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (balanceState.status == BalanceStatus.loading)
-                  const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                else if (balanceState.status == BalanceStatus.error)
-                  const Text('Error',
-                      style: TextStyle(fontSize: 14, color: Colors.redAccent))
-                else
-                  Text(
-                    '\$ ${_formatCurrency(balanceState.balance, showDecimals: false)}',
-                    style: const TextStyle(
-                        fontSize: 26, // Aumentado
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF3F3D56)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      if (balanceState.status == BalanceStatus.loading)
+                        const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                      else if (balanceState.status == BalanceStatus.error)
+                        const Text('Error',
+                            style: TextStyle(fontSize: 14, color: Colors.redAccent))
+                      else
+                        Text(
+                          '\$ ${_formatCurrency(balanceState.balance, showDecimals: false)}',
+                          style: const TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF3F3D56)),
+                        ),
+                      const SizedBox(width: 16),
+                      Container(width: 2, height: 24, color: Colors.grey.shade300),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Text(
+                          '$_posName - ${authState.user?.name ?? 'Taquillero'}',
+                          style: const TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF3F3D56)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
-                Row(
-                  children: [
-                    Text(authState.user?.name ?? 'Operador',
-                        style:
-                            const TextStyle(fontSize: 11, color: Colors.grey)),
-                    const SizedBox(width: 8),
-                    const _ClockWidget(),
-                  ],
-                ),
-              ],
+                  const _ClockWidget(),
+                ],
+              ),
             ),
           ],
         ),
