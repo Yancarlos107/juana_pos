@@ -384,7 +384,7 @@ class ClosingHelper {
         'product_id': 'CIERRE DE CAJA',
         'amount': totalAmount,
         'pmr': 0,
-        'status': 'synced',
+        'status': 'pending',
         'created_at': DateTime.now().toIso8601String(),
         'qr_data': qrData,
       });

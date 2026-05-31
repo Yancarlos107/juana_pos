@@ -62,71 +62,105 @@ class BackgroundSyncService {
     final deviceInfo = await _getDeviceInfo();
 
     try {
-      final List<Map<String, dynamic>> tokens = pending.map((tx) {
-        return {
-          "qr": tx['qr_data'],
-          "cashierid": cashierid,
-          "expiredtime": 60,
-          "fareid": 1,
-          "productid": tx['product_id'],
-          "versionid": 1,
-          "datetime": DateTime.parse(tx['created_at'].toString()).millisecondsSinceEpoch ~/ 1000
-        };
-      }).toList();
+      final pendingSales = pending.where((tx) => tx['product_id'] != 'CIERRE DE CAJA').toList();
+      final pendingClosures = pending.where((tx) => tx['product_id'] == 'CIERRE DE CAJA').toList();
 
-      final payload = {
-        "plot_id": _generatePlotId(),
-        "type_code": "RC173",
-        "dat": (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString(),
-        "token": jsonEncode(tokens),
-        "lat": "0.0",
-        "lon": "0.0",
-        "hw": deviceInfo['hw'],
-        "ime": deviceInfo['ime'],
-        "employee_full_name": employeeFullName,
-        "typ": "RC173",
-        "ver": "1.0.0"
-      };
+      // Sincronizar Ventas (RC173)
+      if (pendingSales.isNotEmpty) {
+        try {
+          final List<Map<String, dynamic>> tokens = pendingSales.map((tx) {
+            return {
+              "qr": tx['qr_data'],
+              "cashierid": cashierid,
+              "expiredtime": 60,
+              "fareid": 1,
+              "productid": tx['product_id'],
+              "versionid": 1,
+              "datetime": DateTime.parse(tx['created_at'].toString()).millisecondsSinceEpoch ~/ 1000
+            };
+          }).toList();
 
-      // Log visual removido para no afectar UX en producción
-      // Endpoint de transacciones
-      final response = await _dio.post('/pos-transactions', data: payload);
+          final payload = {
+            "plot_id": _generatePlotId(),
+            "type_code": "RC173",
+            "dat": (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString(),
+            "token": jsonEncode(tokens),
+            "lat": "0.0",
+            "lon": "0.0",
+            "hw": deviceInfo['hw'],
+            "ime": deviceInfo['ime'],
+            "employee_full_name": employeeFullName,
+            "typ": "RC173",
+            "ver": "1.0.0"
+          };
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        // Marcar todas como synced usando un batch
-        final batch = db.batch();
-        for (final tx in pending) {
-          batch.update('transactions', {'status': 'synced'},
-              where: 'local_id = ?', whereArgs: [tx['local_id']]);
-        }
-        await batch.commit(noResult: true);
-        
-        // Actualizar UI inmediatamente
-        _ref.read(systemStatusProvider.notifier).forceCheckPendingTransactions();
-        
-        // Log visual removido
-        print('DEBUG: ${pending.length} ventas offline sincronizadas masivamente (RC173).');
-      }
-    } catch (e) {
-      String errorMessage = e.toString().split('\n').first;
-      if (e is DioException && e.response != null) {
-        final bodyData = e.response?.data;
-        print('================ RC173 ERROR BODY ================');
-        print('Status Code: ${e.response?.statusCode}');
-        print('Response Body: $bodyData');
-        print('==================================================');
-        
-        // Si hay un mensaje de validación o similar en el JSON, lo extraemos
-        if (bodyData is Map && bodyData.containsKey('message')) {
-          errorMessage = bodyData['message'].toString();
-        } else if (bodyData != null) {
-          errorMessage = bodyData.toString();
+          // Endpoint de transacciones
+          final response = await _dio.post('/pos-transactions', data: payload);
+
+          if (response.statusCode == 200 || response.statusCode == 201) {
+            final batch = db.batch();
+            for (final tx in pendingSales) {
+              batch.update('transactions', {'status': 'synced'},
+                  where: 'local_id = ?', whereArgs: [tx['local_id']]);
+            }
+            await batch.commit(noResult: true);
+            _ref.read(systemStatusProvider.notifier).forceCheckPendingTransactions();
+            print('DEBUG: ${pendingSales.length} ventas offline sincronizadas masivamente (RC173).');
+          }
+        } catch (e) {
+          String errorMessage = e.toString().split('\n').first;
+          if (e is DioException && e.response != null) {
+            final bodyData = e.response?.data;
+            if (bodyData is Map && bodyData.containsKey('message')) {
+              errorMessage = bodyData['message'].toString();
+            } else if (bodyData != null) {
+              errorMessage = bodyData.toString();
+            }
+          }
+          print('DEBUG: Fallo al sincronizar tramas masivas RC173: $errorMessage');
         }
       }
 
-      print('DEBUG: Fallo al sincronizar tramas masivas RC173: $e');
-      // Quedan en pending para el próximo intento
-    }
+      // Sincronizar Cierres de Caja (RC172)
+      if (pendingClosures.isNotEmpty) {
+        for (final tx in pendingClosures) {
+          try {
+            final List<Map<String, dynamic>> tokenArr = [{
+              "qr": tx['qr_data'], // Base64 del JSON de cierre
+              "cashierid": cashierid,
+              "expiredtime": 60,
+              "fareid": 1,
+              "productid": "CIERRE DE CAJA",
+              "versionid": 1,
+              "datetime": DateTime.parse(tx['created_at'].toString()).millisecondsSinceEpoch ~/ 1000
+            }];
+
+            final payload = {
+              "plot_id": _generatePlotId(),
+              "type_code": "RC172",
+              "dat": (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString(),
+              "token": jsonEncode(tokenArr),
+              "lat": "0.0",
+              "lon": "0.0",
+              "hw": deviceInfo['hw'],
+              "ime": deviceInfo['ime'],
+              "employee_full_name": employeeFullName,
+              "typ": "RC172",
+              "ver": "1.0.0"
+            };
+
+            final response = await _dio.post('/pos-transactions', data: payload);
+            if (response.statusCode == 200 || response.statusCode == 201) {
+              await db.update('transactions', {'status': 'synced'},
+                  where: 'local_id = ?', whereArgs: [tx['local_id']]);
+              _ref.read(systemStatusProvider.notifier).forceCheckPendingTransactions();
+              print('DEBUG: Cierre offline sincronizado individualmente (RC172).');
+            }
+          } catch (e) {
+            print('DEBUG: Fallo al sincronizar cierre RC172: $e');
+          }
+        }
+      }
   }
 
   Future<Map<String, String>> _getDeviceInfo() async {
