@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../../../main.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -73,7 +74,7 @@ class BackgroundSyncService {
       final payload = {
         "type_code": "RC173",
         "dat": (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString(),
-        "token": tokens,
+        "token": jsonEncode(tokens),
         "lat": "0.0",
         "lon": "0.0",
         "hw": deviceInfo['hw'],
