@@ -80,20 +80,22 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
                 blurRadius: 8,
                 offset: const Offset(0, 2))
           ]),
-      child: Column(
+      child: Row(
         children: [
-          _summaryItem(
-              icon: Icons.receipt_long_rounded,
-              label: 'Ventas',
-              value: '$unclosedCount'),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Divider(height: 1, color: Color(0xFFF0F0F0)),
+          Expanded(
+            child: _summaryItem(
+                icon: Icons.receipt_long_rounded,
+                label: 'Ventas:',
+                value: '$unclosedCount'),
           ),
-          _summaryItem(
-              icon: Icons.payments_rounded,
-              label: 'Recaudo',
-              value: '\$ ${_formatCurrency(totalAmount)}'),
+          Container(width: 1, height: 24, color: const Color(0xFFE0E0E0)),
+          const SizedBox(width: 16),
+          Expanded(
+            child: _summaryItem(
+                icon: Icons.payments_rounded,
+                label: 'Recaudo:',
+                value: '\$ ${_formatCurrency(totalAmount)}'),
+          ),
         ],
       ),
     );
@@ -103,15 +105,18 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
       {required IconData icon, required String label, required String value}) {
     return Row(
       children: [
-        Icon(icon, color: const Color(0xFF6642F8), size: 22),
-        const SizedBox(width: 12),
-        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 15, fontWeight: FontWeight.w500)),
-        const Spacer(),
-        Text(value,
-            style: const TextStyle(
-                color: Color(0xFF3F3D56),
-                fontSize: 20,
-                fontWeight: FontWeight.bold)),
+        Icon(icon, color: const Color(0xFF6642F8), size: 18),
+        const SizedBox(width: 6),
+        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.w500)),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(value,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  color: Color(0xFF3F3D56),
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold)),
+        ),
       ],
     );
   }
