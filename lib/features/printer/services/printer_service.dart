@@ -27,8 +27,8 @@ class PrinterService {
       });
       return isConnected;
     } catch (e) {
-      print('DEBUG: Error native check, asumiendo true por seguridad: $e');
-      return true;
+      print('DEBUG: Error native check: $e');
+      return false; // NUNCA asumir true si hay error, para no ocultar la desconexión
     }
   }
 
