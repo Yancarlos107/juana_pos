@@ -161,6 +161,9 @@ class BackgroundSyncService {
           }
         }
       }
+    } catch (e) {
+      print('DEBUG: Error general en syncPendingData: $e');
+    }
   }
 
   Future<Map<String, String>> _getDeviceInfo() async {
