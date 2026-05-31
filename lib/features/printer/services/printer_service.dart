@@ -235,41 +235,33 @@ class PrinterService {
       bytes.addAll([0x1B, 0x40]); // Init
       bytes.addAll([0x1B, 0x61, 0x01]); // Centro
       bytes.addAll([0x1B, 0x45, 0x01]); // Bold
-      bytes.addAll([0x1D, 0x21, 0x01]); // Tamaño DOBLE ALTO
+      bytes.addAll([0x1D, 0x21, 0x00]); // Tamaño NORMAL
       bytes.addAll(_text('Corredor Central Norte\n'));
 
-      bytes.addAll([0x1D, 0x21, 0x00]); // Tamaño normal
       if (branchName != null && branchName.trim().isNotEmpty) {
-        bytes.addAll(_text('${branchName.trim()}\n'));
+        bytes.addAll(_text('${branchName.trim().toUpperCase()}\n'));
       }
 
       if (isReprint) {
         bytes.addAll(_text('*** REIMPRESIÓN ***\n'));
       }
 
-      bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold para los detalles
-
-      final shortTx = transactionId.split('-').first;
-
+      bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
       bytes.addAll([0x1B, 0x61, 0x00]); // Izquierda
-      bytes.addAll(_text('Fecha:       $dateStr $timeStr\n'));
-      bytes.addAll(_text('Transaccion: #$shortTx\n'));
-      bytes.addAll(_text('Cajero:      $cashierName\n'));
-      bytes.addAll(_text('\n'));
+      bytes.addAll(_text('Fecha: $dateStr\n'));
+      bytes.addAll(_text('Serial: $transactionId\n\n'));
 
       bytes.addAll([0x1B, 0x61, 0x01]); // Centro
       bytes.addAll([0x1B, 0x45, 0x01]); // Bold
-      bytes.addAll([0x1D, 0x21, 0x10]); // Tamaño DOBLE ANCHO
+      bytes.addAll([0x1D, 0x21, 0x33]); // Tamaño GIGANTE (x4)
 
-      final String name =
-          productName != null ? productName.trim().toUpperCase() : 'REGULAR';
-      bytes.addAll(_text('$name \$ ${amount.toStringAsFixed(0)}\n'));
+      bytes.addAll(_text('\$ ${amount.toStringAsFixed(2)}\n\n'));
 
       bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
+      bytes.addAll([0x1D, 0x21, 0x00]); // Tamaño NORMAL
 
       bytes.addAll(_cmdQrCode(qrData));
-      bytes.addAll(
-          _text('\n')); // Solo un salto para que termine de imprimir el QR
+      bytes.addAll(_text('\n'));
 
       bytes.addAll([0x1B, 0x64, 0x02]);        // 2 saltos
       bytes.addAll([0x1D, 0x56, 0x42, 0x00]); // Cortar papel

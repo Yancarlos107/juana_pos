@@ -164,8 +164,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             final posName = await storage.getPosLocationName();
             final branchName = posName ?? ref.read(authProvider).user?.branchName;
 
+            final localId = result.rawData['local_id'] as int? ?? 0;
+            final deviceHash = await storage.getDeviceHash();
+            final serialNumber = '$deviceHash-${localId.toString().padLeft(7, '0')}';
+
             final printResult = await ref.read(printerServiceProvider).printTicket(
-                  transactionId: result.transactionId,
+                  transactionId: serialNumber,
                   amount: product.value,
                   qrData: result.qrCode,
                   cashierName: ref.read(authProvider).user?.name ?? 'Operador',

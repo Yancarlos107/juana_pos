@@ -284,8 +284,9 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
             Product(id: pId, productName: 'Tarifa $pId', value: amount));
 
     final cashierName = ref.read(authProvider).user?.name ?? 'Operador';
-    final branchName =
-        ref.read(authProvider).user?.branchName ?? 'Sucursal Juana';
+    final storage = ref.read(localStorageProvider);
+    final posName = await storage.getPosLocationName();
+    final branchName = posName ?? ref.read(authProvider).user?.branchName ?? 'Sucursal Juana';
 
     final isReprint = printStatus == 1;
 
@@ -311,8 +312,12 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
         printResult = false;
       }
     } else {
+      final localId = sale['local_id'] as int? ?? 0;
+      final deviceHash = await ref.read(localStorageProvider).getDeviceHash();
+      final serialNumber = '$deviceHash-${localId.toString().padLeft(7, '0')}';
+
       printResult = await printer.printTicket(
-        transactionId: transactionId,
+        transactionId: serialNumber,
         amount: amount,
         qrData: qrData,
         cashierName: cashierName,

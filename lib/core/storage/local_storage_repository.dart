@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -12,6 +14,31 @@ class LocalStorageRepository {
   static const String _branchIdKey = 'branch_id';
   static const String _userRolesKey = 'user_roles';
   static const String _balanceKey = 'branch_balance';
+  static const String _deviceHashKey = 'device_hash_cache';
+
+  Future<String> getDeviceHash() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? hash = prefs.getString(_deviceHashKey);
+    if (hash != null) return hash;
+
+    final DeviceInfoPlugin deviceInfoPlugin = DeviceInfoPlugin();
+    String deviceId = "UNKNOWN";
+    try {
+      if (Platform.isAndroid) {
+        deviceId = (await deviceInfoPlugin.androidInfo).id;
+      } else if (Platform.isIOS) {
+        deviceId = (await deviceInfoPlugin.iosInfo).identifierForVendor ?? "UNKNOWN";
+      }
+    } catch (_) {}
+
+    final int hashNum = deviceId.hashCode.abs();
+    final char1 = String.fromCharCode(65 + (hashNum % 26));
+    final char2 = String.fromCharCode(65 + ((hashNum ~/ 26) % 26));
+    hash = '$char1$char2';
+    
+    await prefs.setString(_deviceHashKey, hash);
+    return hash;
+  }
 
   // ================= Manejo del Token =================
   

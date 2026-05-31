@@ -245,15 +245,10 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
       final qrCodeStr = String.fromCharCodes(Iterable.generate(
           32, (_) => chars.codeUnitAt(random.nextInt(chars.length))));
 
-      final result = QrPurchaseResult(
-        qrCode: qrCodeStr,
-        transactionId: localId,
-        yourNewBalance: currentBalance - product.value,
-        rawData: {},
-      );
+
       
       // 2. Decrementar saldo local tras éxito
-      final newBalance = result.yourNewBalance ?? (currentBalance - product.value);
+      final newBalance = currentBalance - product.value;
       await _storage.saveBalance(newBalance);
 
       // 3. Guardamos la venta en SQLite
@@ -263,19 +258,29 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
       final sessionQuery = await db.query('sessions', where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
       final sessionId = sessionQuery.isNotEmpty ? sessionQuery.first['id'] : null;
 
-      await db.insert('transactions', {
-        'id': result.transactionId,
+      final insertedLocalId = await db.insert('transactions', {
+        'id': localId,
         'session_id': sessionId,
         'product_id': product.id,
         'amount': product.value,
         'pmr': product.pmr ? 1 : 0,
         'status': 'pending', // Siempre local first
         'created_at': DateTime.now().toIso8601String(),
-        'qr_data': result.qrCode,
+        'qr_data': qrCodeStr,
         'print_status': 0, // Inicia en 0, la UI lo actualizará a 1 si imprime
       });
 
-      // 4. Actualizar contador visual inmediatamente
+      final result = QrPurchaseResult(
+        qrCode: qrCodeStr,
+        transactionId: localId,
+        yourNewBalance: newBalance,
+        rawData: {'local_id': insertedLocalId},
+      );
+
+      // 4. Refrescamos historial en UI sin depender de internet
+      _ref.read(salesHistoryProvider.notifier).fetchHistory();
+
+      // 5. Actualizar contador visual inmediatamente
       _statusNotifier.forceCheckPendingTransactions();
 
       state = state.copyWith(
