@@ -105,16 +105,16 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
       {required IconData icon, required String label, required String value}) {
     return Row(
       children: [
-        Icon(icon, color: const Color(0xFF6642F8), size: 18),
-        const SizedBox(width: 6),
-        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.w500)),
-        const SizedBox(width: 6),
+        Icon(icon, color: const Color(0xFF6642F8), size: 36),
+        const SizedBox(width: 8),
+        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 18, fontWeight: FontWeight.w500)),
+        const SizedBox(width: 8),
         Expanded(
           child: Text(value,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                   color: Color(0xFF3F3D56),
-                  fontSize: 16,
+                  fontSize: 20,
                   fontWeight: FontWeight.bold)),
         ),
       ],
