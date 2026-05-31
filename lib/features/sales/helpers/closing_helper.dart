@@ -390,12 +390,6 @@ class ClosingHelper {
       });
 
       await ref.read(sessionServiceProvider).closeSession(branchId);
-      
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Cierre de caja procesado (Local)'),
-            backgroundColor: Colors.green));
-      }
 
       if (isLogout) {
         _executeLogout(context, ref);

@@ -347,12 +347,6 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
         final newStatus = printStatus == 0 ? 1 : 2;
         await ref.read(salesHistoryProvider.notifier).markAsPrinted(transactionId, newStatus);
       }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content:
-                Text(isReprint ? 'Reimpresión exitosa' : 'Impresión exitosa'),
-            backgroundColor: Colors.green));
-      }
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(

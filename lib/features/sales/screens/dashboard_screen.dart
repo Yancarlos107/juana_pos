@@ -200,8 +200,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     ref.read(salesHistoryProvider.notifier).fetchHistory();
 
     if (mounted && successfulPrints > 0) {
-      _showSnackBar('Venta Exitosa: Se generaron $successfulPrints ticket(s).',
-          Icons.check_circle, Colors.green);
       setState(() {
         _cart.clear();
       });
