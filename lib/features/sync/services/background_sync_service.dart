@@ -23,6 +23,9 @@ class BackgroundSyncService {
   final Dio _dio;
   final LocalStorageRepository _storage;
   final ProviderRef _ref;
+  bool _isSyncing = false;
+  Map<String, String>? _cachedDeviceInfo;
+
   BackgroundSyncService(this._dio, this._storage, this._ref);
 
   /// Inicia el proceso de sincronización si no hay uno activo.
