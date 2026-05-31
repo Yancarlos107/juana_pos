@@ -255,7 +255,7 @@ class PrinterService {
       bytes.addAll([0x1B, 0x45, 0x01]); // Bold
       bytes.addAll([0x1D, 0x21, 0x33]); // Tamaño GIGANTE (x4)
 
-      bytes.addAll(_text('\$ ${amount.toStringAsFixed(2)}\n'));
+      bytes.addAll(_text('\$${amount.toStringAsFixed(2)}\n'));
 
       bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
       bytes.addAll([0x1D, 0x21, 0x00]); // Tamaño NORMAL
