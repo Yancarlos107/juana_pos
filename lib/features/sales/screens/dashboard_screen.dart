@@ -316,9 +316,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(children: [
-          Icon(icon, color: Colors.white),
-          const SizedBox(width: 12),
-          Expanded(child: Text(message))
+          Icon(icon, color: Colors.white, size: 32),
+          const SizedBox(width: 16),
+          Expanded(child: Text(message, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)))
         ]),
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,

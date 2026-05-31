@@ -85,7 +85,7 @@ class BackgroundSyncService {
       // Log visual de intento de envío para QA
       scaffoldMessengerKey.currentState?.showSnackBar(
         SnackBar(
-          content: Text('Intentando enviar ${pending.length} tramas a RC173...', style: const TextStyle(fontWeight: FontWeight.bold)),
+          content: Text('Intentando enviar ${pending.length} tramas a RC173...', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
           backgroundColor: Colors.blueAccent,
           duration: const Duration(seconds: 2),
         ),
@@ -106,7 +106,7 @@ class BackgroundSyncService {
         // Log visual para QA
         scaffoldMessengerKey.currentState?.showSnackBar(
           SnackBar(
-            content: Text('Sincronización masiva exitosa: ${pending.length} transacciones enviadas al servidor.', style: const TextStyle(fontWeight: FontWeight.bold)),
+            content: Text('Sincronización masiva exitosa: ${pending.length} transacciones enviadas al servidor.', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 4),
           ),
@@ -118,7 +118,7 @@ class BackgroundSyncService {
       // Log visual de error para QA
       scaffoldMessengerKey.currentState?.showSnackBar(
         SnackBar(
-          content: Text('Fallo en RC173: ${e.toString().split('\n').first}', style: const TextStyle(fontWeight: FontWeight.bold)),
+          content: Text('Fallo en RC173: ${e.toString().split('\n').first}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
           backgroundColor: Colors.redAccent,
           duration: const Duration(seconds: 4),
         ),
