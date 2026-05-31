@@ -125,21 +125,11 @@ class BackgroundSyncService {
       if (pendingClosures.isNotEmpty) {
         for (final tx in pendingClosures) {
           try {
-            final List<Map<String, dynamic>> tokenArr = [{
-              "qr": tx['qr_data'], // Base64 del JSON de cierre
-              "cashierid": cashierid,
-              "expiredtime": 60,
-              "fareid": 1,
-              "productid": "CIERRE DE CAJA",
-              "versionid": 1,
-              "datetime": DateTime.parse(tx['created_at'].toString()).millisecondsSinceEpoch ~/ 1000
-            }];
-
             final payload = {
               "plot_id": _generatePlotId(),
               "type_code": "RC172",
               "dat": (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString(),
-              "token": jsonEncode(tokenArr),
+              "token": tx['qr_data'],
               "lat": "0.0",
               "lon": "0.0",
               "hw": deviceInfo['hw'],
