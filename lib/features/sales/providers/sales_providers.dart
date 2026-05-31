@@ -62,15 +62,8 @@ class BalanceNotifier extends StateNotifier<BalanceState> {
       await _storage.saveBalance(balance);
       state = state.copyWith(status: BalanceStatus.loaded, balance: balance);
     } catch (e) {
-      // Si falla la red, caemos al caché local offline
-      try {
-        await loadLocalBalance();
-      } catch (innerError) {
-        state = state.copyWith(
-          status: BalanceStatus.error,
-          errorMessage: e.toString().replaceFirst('Exception: ', ''),
-        );
-      }
+      // Siempre hacer fallback al saldo local si hay problemas de red o del servidor
+      await loadLocalBalance();
     }
   }
 
