@@ -77,7 +77,14 @@ class SystemStatusNotifier extends StateNotifier<SystemStatus> {
         _syncService.syncPendingData();
       }
     } catch (e) {
-      state = state.copyWith(isInternetConnected: false);
+      if (e is DioException && e.response != null) {
+        // Si el servidor responde con un código de error (ej. 401 Unauthorized), 
+        // significa que SÍ hay internet y el servidor fue alcanzado.
+        state = state.copyWith(isInternetConnected: true);
+        _syncService.syncPendingData();
+      } else {
+        state = state.copyWith(isInternetConnected: false);
+      }
     }
   }
 
