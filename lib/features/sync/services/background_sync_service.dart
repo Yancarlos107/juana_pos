@@ -91,8 +91,8 @@ class BackgroundSyncService {
         ),
       );
 
-      // Endpoint masivo RC173
-      final response = await _dio.post('/api/pos-transactions/rc173', data: payload);
+      // Endpoint de transacciones
+      final response = await _dio.post('/pos-transactions', data: payload);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         // Marcar todas como synced usando un batch
