@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'package:flutter/material.dart';
+import '../../../main.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -91,6 +93,16 @@ class BackgroundSyncService {
               where: 'local_id = ?', whereArgs: [tx['local_id']]);
         }
         await batch.commit(noResult: true);
+        
+        // Log visual para QA
+        scaffoldMessengerKey.currentState?.showSnackBar(
+          SnackBar(
+            content: Text('Sincronización masiva exitosa: ${pending.length} transacciones enviadas al servidor.', style: const TextStyle(fontWeight: FontWeight.bold)),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+
         print('DEBUG: ${pending.length} ventas offline sincronizadas masivamente (RC173).');
       }
     } catch (e) {

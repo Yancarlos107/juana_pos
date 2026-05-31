@@ -14,12 +14,15 @@ void main() {
   runApp(const ProviderScope(child: MyApp()));
 }
 
+final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
+
 class MyApp extends ConsumerWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp(
+      scaffoldMessengerKey: scaffoldMessengerKey,
       title: 'Juana POS',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,

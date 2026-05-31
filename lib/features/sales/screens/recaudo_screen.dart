@@ -257,7 +257,7 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
                   fontSize: 15),
             ),
           ),
-          if (printStatus < 2 || product == 'CIERRE DE CAJA')
+          if ((!isClosed && printStatus < 2) || product == 'CIERRE DE CAJA')
             InkWell(
               onTap: () => _handlePrint(sale),
               child: Container(

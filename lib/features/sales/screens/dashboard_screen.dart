@@ -418,15 +418,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           if (systemStatus.pendingTransactions > 0)
             Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                     color: Colors.orange,
-                    borderRadius: BorderRadius.circular(12)),
+                    borderRadius: BorderRadius.circular(16)),
                 child: Text('${systemStatus.pendingTransactions}',
                     style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
-                        fontSize: 12)),
+                        fontSize: 18)),
               ),
             ),
           const SizedBox(width: 8),
@@ -495,6 +495,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   label: 'Pánico',
                   color: Colors.redAccent,
                   onPressed: () async {
+                    if (!ref.read(systemStatusProvider).isInternetConnected) {
+                      _showSnackBar('Estamos fuera de linea, guardaremos tu reporte para enviarlo una vez el dispositivo tenga acceso a internet.', Icons.wifi_off_rounded, Colors.orange);
+                      return;
+                    }
                     showDialog(
                       context: context,
                       barrierDismissible: false,
@@ -629,6 +633,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     const Icon(Icons.chevron_right_rounded, color: Colors.grey),
                 onTap: () async {
                   Navigator.pop(ctx);
+                  if (!ref.read(systemStatusProvider).isInternetConnected) {
+                    _showSnackBar('Estamos fuera de linea, guardaremos tu reporte para enviarlo una vez el dispositivo tenga acceso a internet.', Icons.wifi_off_rounded, Colors.orange);
+                    return;
+                  }
 
                   // Mostrar loading
                   showDialog(
