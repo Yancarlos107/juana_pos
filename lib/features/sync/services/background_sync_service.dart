@@ -82,6 +82,15 @@ class BackgroundSyncService {
         "ver": "1.0.0"
       };
 
+      // Log visual de intento de envío para QA
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        SnackBar(
+          content: Text('Intentando enviar ${pending.length} tramas a RC173...', style: const TextStyle(fontWeight: FontWeight.bold)),
+          backgroundColor: Colors.blueAccent,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+
       // Endpoint masivo RC173
       final response = await _dio.post('/api/pos-transactions/rc173', data: payload);
 
@@ -106,6 +115,14 @@ class BackgroundSyncService {
         print('DEBUG: ${pending.length} ventas offline sincronizadas masivamente (RC173).');
       }
     } catch (e) {
+      // Log visual de error para QA
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        SnackBar(
+          content: Text('Fallo en RC173: ${e.toString().split('\n').first}', style: const TextStyle(fontWeight: FontWeight.bold)),
+          backgroundColor: Colors.redAccent,
+          duration: const Duration(seconds: 4),
+        ),
+      );
       print('DEBUG: Fallo al sincronizar tramas masivas RC173: $e');
       // Quedan en pending para el próximo intento
     }
