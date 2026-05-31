@@ -72,12 +72,20 @@ class AuthService {
         return _offlineLogin(phoneOrEmail, password);
       }
 
-      final serverMessage = e.response?.data?['message'];
-      if (e.response?.statusCode == 422) {
-        throw Exception(serverMessage ?? 'Credenciales inválidas o falta device_name.');
+      final dataResponse = e.response?.data;
+      String? serverMessage;
+      
+      if (dataResponse is Map) {
+        serverMessage = dataResponse['message']?.toString() ?? dataResponse['error']?.toString();
       }
+
+      if (e.response?.statusCode == 422 || e.response?.statusCode == 400 || e.response?.statusCode == 409) {
+        final rawErrors = dataResponse.toString();
+        throw Exception(serverMessage ?? 'Validación del servidor falló: $rawErrors');
+      }
+      
       final detail = serverMessage ?? e.message ?? e.type.toString();
-      throw Exception('Error ($detail)');
+      throw Exception('Error (${e.response?.statusCode}): $detail');
     }
   }
 
