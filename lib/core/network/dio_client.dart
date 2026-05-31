@@ -35,7 +35,6 @@ final dioProvider = Provider<Dio>((ref) {
 
   // Agregamos el interceptor para inyectar el token en cada petición
   dio.interceptors.add(AuthInterceptor(storage));
-  dio.interceptors.add(LogInterceptor(responseBody: true, requestBody: true));
   
   return dio;
 });
