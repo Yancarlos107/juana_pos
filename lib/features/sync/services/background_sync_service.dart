@@ -95,7 +95,7 @@ class BackgroundSyncService {
           };
 
           // Endpoint de transacciones
-          final response = await _dio.post('/pos-transactions/173', data: payload);
+          final response = await _dio.post('/pos-transactions/rc173', data: payload);
 
           if (response.statusCode == 200 || response.statusCode == 201) {
             final batch = db.batch();
