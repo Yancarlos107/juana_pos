@@ -115,12 +115,28 @@ class BackgroundSyncService {
         print('DEBUG: ${pending.length} ventas offline sincronizadas masivamente (RC173).');
       }
     } catch (e) {
+      String errorMessage = e.toString().split('\n').first;
+      if (e is DioException && e.response != null) {
+        final bodyData = e.response?.data;
+        print('================ RC173 ERROR BODY ================');
+        print('Status Code: ${e.response?.statusCode}');
+        print('Response Body: $bodyData');
+        print('==================================================');
+        
+        // Si hay un mensaje de validación o similar en el JSON, lo extraemos
+        if (bodyData is Map && bodyData.containsKey('message')) {
+          errorMessage = bodyData['message'].toString();
+        } else if (bodyData != null) {
+          errorMessage = bodyData.toString();
+        }
+      }
+
       // Log visual de error para QA
       scaffoldMessengerKey.currentState?.showSnackBar(
         SnackBar(
-          content: Text('Fallo en RC173: ${e.toString().split('\n').first}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+          content: Text('Fallo RC173: $errorMessage', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
           backgroundColor: Colors.redAccent,
-          duration: const Duration(seconds: 4),
+          duration: const Duration(seconds: 8), // Más tiempo para que puedan tomar pantallazo
         ),
       );
       print('DEBUG: Fallo al sincronizar tramas masivas RC173: $e');
