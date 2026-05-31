@@ -23,36 +23,6 @@ class BackgroundSyncService {
   final Dio _dio;
   final LocalStorageRepository _storage;
   final ProviderRef _ref;
-  bool _isSyncing = false;
-  Map<String, String>? _cachedDeviceInfo;
-
-  void _showResponseModal(String title, String message, Color color) {
-    final context = navigatorKey.currentContext;
-    if (context != null) {
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text(title, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
-          content: Text(message, style: const TextStyle(fontSize: 16)),
-          actions: [
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF6642F8),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('OK'),
-            )
-          ],
-        ),
-      );
-    }
-  }
-
   BackgroundSyncService(this._dio, this._storage, this._ref);
 
   /// Inicia el proceso de sincronización si no hay uno activo.
@@ -134,12 +104,6 @@ class BackgroundSyncService {
             }
             await batch.commit(noResult: true);
             _ref.read(systemStatusProvider.notifier).forceCheckPendingTransactions();
-            
-            String successMsg = 'Transacciones sincronizadas exitosamente';
-            if (response.data is Map && response.data.containsKey('message')) {
-              successMsg = response.data['message'].toString();
-            }
-            _showResponseModal('Éxito (Ventas RC173)', successMsg, Colors.green);
             print('DEBUG: ${pendingSales.length} ventas offline sincronizadas masivamente (RC173).');
           }
         } catch (e) {
@@ -152,7 +116,6 @@ class BackgroundSyncService {
               errorMessage = bodyData.toString();
             }
           }
-          _showResponseModal('Error (Ventas RC173)', errorMessage, Colors.redAccent);
           print('DEBUG: Fallo al sincronizar tramas masivas RC173: $errorMessage');
         }
       }
@@ -190,25 +153,9 @@ class BackgroundSyncService {
               await db.update('transactions', {'status': 'synced'},
                   where: 'local_id = ?', whereArgs: [tx['local_id']]);
               _ref.read(systemStatusProvider.notifier).forceCheckPendingTransactions();
-              
-              String successMsg = 'Cierre sincronizado exitosamente';
-              if (response.data is Map && response.data.containsKey('message')) {
-                successMsg = response.data['message'].toString();
-              }
-              _showResponseModal('Éxito (Cierre RC172)', successMsg, Colors.green);
               print('DEBUG: Cierre offline sincronizado individualmente (RC172).');
             }
           } catch (e) {
-            String errorMessage = e.toString().split('\n').first;
-            if (e is DioException && e.response != null) {
-              final bodyData = e.response?.data;
-              if (bodyData is Map && bodyData.containsKey('message')) {
-                errorMessage = bodyData['message'].toString();
-              } else if (bodyData != null) {
-                errorMessage = bodyData.toString();
-              }
-            }
-            _showResponseModal('Error (Cierre RC172)', errorMessage, Colors.redAccent);
             print('DEBUG: Fallo al sincronizar cierre RC172: $e');
           }
         }
