@@ -57,12 +57,6 @@ class SystemStatusNotifier extends StateNotifier<SystemStatus> {
 
   Future<void> _checkInternetPing() async {
     try {
-      final connectivityResult = await Connectivity().checkConnectivity();
-      if (connectivityResult.contains(ConnectivityResult.none)) {
-        state = state.copyWith(isInternetConnected: false);
-        return;
-      }
-      
       // Ping a la propia API para validar conectividad real con el backend
       final response = await _dio.get('/user', options: Options(
         sendTimeout: const Duration(seconds: 3),

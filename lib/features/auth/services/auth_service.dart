@@ -17,11 +17,8 @@ class AuthService {
   /// Realiza login con email y contraseña.
   /// Devuelve el UserModel si es exitoso (incluye token, sucursal, etc).
   Future<UserModel> login(String phoneOrEmail, String password) async {
-    // Fast-fail if explicitly offline
-    final connectivityResult = await Connectivity().checkConnectivity();
-    if (connectivityResult.contains(ConnectivityResult.none)) {
-      return _offlineLogin(phoneOrEmail, password);
-    }
+    // Intentamos loguearnos directamente con el backend.
+    // Si realmente no hay internet, Dio arrojará un connectionError y haremos el fallback.
 
     try {
       final response = await _dio.post(
