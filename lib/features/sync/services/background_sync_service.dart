@@ -175,7 +175,7 @@ class BackgroundSyncService {
               "plot_id": _generatePlotId(),
               "type_code": "RC172",
               "dat": (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString(),
-              "token": tokenArr,
+              "token": jsonEncode(tokenArr),
               "lat": "0.0",
               "lon": "0.0",
               "hw": deviceInfo['hw'],
