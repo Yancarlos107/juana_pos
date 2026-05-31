@@ -277,9 +277,6 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
         rawData: {'local_id': insertedLocalId},
       );
 
-      // 4. Refrescamos historial en UI sin depender de internet
-      _ref.read(salesHistoryProvider.notifier).fetchHistory();
-
       // 5. Actualizar contador visual inmediatamente
       _statusNotifier.forceCheckPendingTransactions();
 
