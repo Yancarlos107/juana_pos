@@ -71,6 +71,7 @@ class BackgroundSyncService {
       }).toList();
 
       final payload = {
+        "type_code": "RC173",
         "dat": (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString(),
         "token": tokens,
         "lat": "0.0",
