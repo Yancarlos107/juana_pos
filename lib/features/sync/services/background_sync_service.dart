@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../../monitoring/services/system_status_service.dart';
 import '../../../main.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
@@ -13,16 +14,17 @@ import '../../../core/storage/local_storage_repository.dart';
 final backgroundSyncProvider = Provider<BackgroundSyncService>((ref) {
   final dio = ref.watch(dioProvider);
   final storage = ref.watch(localStorageProvider);
-  return BackgroundSyncService(dio, storage);
+  return BackgroundSyncService(dio, storage, ref);
 });
 
 class BackgroundSyncService {
   final Dio _dio;
   final LocalStorageRepository _storage;
+  final ProviderRef _ref;
   bool _isSyncing = false;
   Map<String, String>? _cachedDeviceInfo;
 
-  BackgroundSyncService(this._dio, this._storage);
+  BackgroundSyncService(this._dio, this._storage, this._ref);
 
   /// Inicia el proceso de sincronización si no hay uno activo.
   Future<void> syncPendingData() async {
@@ -106,6 +108,9 @@ class BackgroundSyncService {
               where: 'local_id = ?', whereArgs: [tx['local_id']]);
         }
         await batch.commit(noResult: true);
+        
+        // Actualizar UI inmediatamente
+        _ref.read(systemStatusProvider.notifier).forceCheckPendingTransactions();
         
         // Log visual para QA
         scaffoldMessengerKey.currentState?.showSnackBar(
