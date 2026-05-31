@@ -80,14 +80,16 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
                 blurRadius: 8,
                 offset: const Offset(0, 2))
           ]),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      child: Column(
         children: [
           _summaryItem(
               icon: Icons.receipt_long_rounded,
               label: 'Ventas',
               value: '$unclosedCount'),
-          Container(width: 1, height: 40, color: Colors.grey.shade200),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Divider(height: 1, color: Color(0xFFF0F0F0)),
+          ),
           _summaryItem(
               icon: Icons.payments_rounded,
               label: 'Recaudo',
@@ -99,22 +101,16 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
 
   Widget _summaryItem(
       {required IconData icon, required String label, required String value}) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
+    return Row(
       children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: const Color(0xFF6642F8), size: 18),
-            const SizedBox(width: 6),
-            Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.w500)),
-          ],
-        ),
-        const SizedBox(height: 4),
+        Icon(icon, color: const Color(0xFF6642F8), size: 22),
+        const SizedBox(width: 12),
+        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 15, fontWeight: FontWeight.w500)),
+        const Spacer(),
         Text(value,
             style: const TextStyle(
                 color: Color(0xFF3F3D56),
-                fontSize: 22,
+                fontSize: 20,
                 fontWeight: FontWeight.bold)),
       ],
     );
