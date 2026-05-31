@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../main.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -72,6 +73,7 @@ class BackgroundSyncService {
       }).toList();
 
       final payload = {
+        "plot_id": _generatePlotId(),
         "type_code": "RC173",
         "dat": (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString(),
         "token": jsonEncode(tokens),
@@ -166,6 +168,12 @@ class BackgroundSyncService {
 
     _cachedDeviceInfo = {"hw": hw, "ime": ime};
     return _cachedDeviceInfo!;
+  }
+
+  String _generatePlotId() {
+    final random = Random();
+    const chars = '0123456789abcdef';
+    return List.generate(32, (index) => chars[random.nextInt(chars.length)]).join();
   }
 
   Future<void> _syncSessions() async {
