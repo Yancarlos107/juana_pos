@@ -18,29 +18,12 @@ class RecaudoScreen extends ConsumerStatefulWidget {
 }
 
 class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
-  final _searchController = TextEditingController();
-  bool _isSearching = false;
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(salesHistoryProvider.notifier).fetchHistory();
     });
-  }
-
-  void _performSearch() {
-    final query = _searchController.text.trim();
-    if (query.isNotEmpty) {
-      setState(() => _isSearching = true);
-      ref.read(salesHistoryProvider.notifier).search(query);
-    }
-  }
-
-  void _clearSearch() {
-    _searchController.clear();
-    setState(() => _isSearching = false);
-    ref.read(salesHistoryProvider.notifier).fetchHistory();
   }
 
   void _showClosingConfirmation() {
@@ -65,7 +48,6 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
           : null,
       body: Column(
         children: [
-          _buildSearchBar(),
           if (historyState.status == SalesHistoryStatus.loaded)
             _buildSummaryCard(historyState),
           Expanded(child: _buildTransactionList(historyState)),
@@ -74,47 +56,7 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
     );
   }
 
-  Widget _buildSearchBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      color: Colors.white,
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Buscar transacción...',
-                prefixIcon:
-                    const Icon(Icons.search_rounded, color: Color(0xFF6642F8)),
-                suffixIcon: _isSearching
-                    ? IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => _clearSearch())
-                    : null,
-                filled: true,
-                fillColor: const Color(0xFFF5F7FA),
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide.none),
-                contentPadding: EdgeInsets.zero,
-              ),
-              onSubmitted: (_) => _performSearch(),
-            ),
-          ),
-          const SizedBox(width: 12),
-          IconButton(
-            onPressed: () => _performSearch(),
-            icon: const Icon(Icons.filter_list_rounded, color: Colors.white),
-            style: IconButton.styleFrom(
-                backgroundColor: const Color(0xFF6642F8),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16))),
-          ),
-        ],
-      ),
-    );
-  }
+
 
   Widget _buildSummaryCard(SalesHistoryState state) {
     double totalAmount = 0;
@@ -127,28 +69,28 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
     }
 
     return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
                 color: Colors.black.withOpacity(0.02),
-                blurRadius: 10,
-                offset: const Offset(0, 4))
+                blurRadius: 8,
+                offset: const Offset(0, 2))
           ]),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           _summaryItem(
               icon: Icons.receipt_long_rounded,
-              label: 'Total Ventas',
+              label: 'Ventas',
               value: '$unclosedCount'),
-          Container(width: 1, height: 30, color: Colors.grey.shade100),
+          Container(width: 1, height: 40, color: Colors.grey.shade200),
           _summaryItem(
               icon: Icons.payments_rounded,
-              label: 'Recaudado',
+              label: 'Recaudo',
               value: '\$ ${_formatCurrency(totalAmount)}'),
         ],
       ),
@@ -158,15 +100,22 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
   Widget _summaryItem(
       {required IconData icon, required String label, required String value}) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, color: const Color(0xFF6642F8), size: 32),
-        const SizedBox(height: 8),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: const Color(0xFF6642F8), size: 18),
+            const SizedBox(width: 6),
+            Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.w500)),
+          ],
+        ),
+        const SizedBox(height: 4),
         Text(value,
             style: const TextStyle(
                 color: Color(0xFF3F3D56),
-                fontSize: 26,
+                fontSize: 22,
                 fontWeight: FontWeight.bold)),
-        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 14)),
       ],
     );
   }
