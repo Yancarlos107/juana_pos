@@ -342,7 +342,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     const BorderSide(color: Color(0xFF6642F8), width: 2),
               ),
             ),
-            validator: (v) => v!.isEmpty ? 'Requerido' : null,
+            validator: (v) {
+              if (v == null || v.isEmpty) return 'Requerido';
+              if (v.length < 4) return 'Mínimo 4 caracteres';
+              return null;
+            },
           ),
           const SizedBox(height: 20),
           TextFormField(
@@ -374,7 +378,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     const BorderSide(color: Color(0xFF6642F8), width: 2),
               ),
             ),
-            validator: (v) => v!.isEmpty ? 'Requerido' : null,
+            validator: (v) {
+              if (v == null || v.isEmpty) return 'Requerido';
+              if (v.length < 4) return 'Mínimo 4 caracteres';
+              return null;
+            },
           ),
           if (authState.errorMessage != null) ...[
             const SizedBox(height: 24),
