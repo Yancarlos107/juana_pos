@@ -14,10 +14,14 @@ import '../../sync/services/background_sync_service.dart';
 
 class ClosingHelper {
   static String formatCurrency(double value) {
-    final intPart = value
-        .toStringAsFixed(0)
-        .replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
-    return intPart;
+    final hasDecimals = value % 1 != 0;
+    if (hasDecimals) {
+      final parts = value.toStringAsFixed(2).split('.');
+      final intPart = parts[0].replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+      return '$intPart.${parts[1]}';
+    } else {
+      return value.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+    }
   }
 
   static void showClosingConfirmation(BuildContext context, WidgetRef ref, {bool isLogout = false}) {
@@ -316,7 +320,7 @@ class ClosingHelper {
       final nameStr = prod.productName.length > 15
           ? prod.productName.substring(0, 15)
           : prod.productName.padRight(15);
-      final valStr = '\$${t.toStringAsFixed(0)}'.padLeft(8);
+      final valStr = '\$${formatCurrency(t)}'.padLeft(8);
       breakdownLines.add('$qtyStr $nameStr $valStr');
     });
 

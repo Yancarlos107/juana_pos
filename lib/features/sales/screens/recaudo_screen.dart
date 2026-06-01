@@ -357,10 +357,13 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
   }
 
   String _formatCurrency(double value) {
-    // Para COP (Pesos Colombianos) sobran los decimales en la mayoría de casos
-    final intPart = value
-        .toStringAsFixed(0)
-        .replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
-    return intPart;
+    final hasDecimals = value % 1 != 0;
+    if (hasDecimals) {
+      final parts = value.toStringAsFixed(2).split('.');
+      final intPart = parts[0].replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+      return '$intPart.${parts[1]}';
+    } else {
+      return value.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+    }
   }
 }

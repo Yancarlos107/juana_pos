@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import '../../../core/utils/currency_formatter.dart';
 
 /// Widget que representa el ticket de pasaje para impresión térmica.
 /// Se renderiza como imagen y se envía a la impresora.
@@ -89,7 +90,7 @@ class TicketWidget extends StatelessWidget {
 
           // === Monto ===
           Text(
-            '\$ ${amount.toStringAsFixed(0)}',
+            '\$ ${CurrencyFormatter.format(amount)}',
             style: const TextStyle(
               fontSize: 32,
               fontWeight: FontWeight.w900,
@@ -226,7 +227,7 @@ class ClosingTicketWidget extends StatelessWidget {
           _row('Transacciones', '$totalTransactions'),
           const SizedBox(height: 8),
           Text(
-            'TOTAL: \$ ${totalAmount.toStringAsFixed(0)}',
+            'TOTAL: \$ ${CurrencyFormatter.format(totalAmount)}',
             style: const TextStyle(
                 fontSize: 24, fontWeight: FontWeight.w900, color: Colors.black),
           ),

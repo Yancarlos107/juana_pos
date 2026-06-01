@@ -6,29 +6,32 @@
 /// - `product_name`: nombre del tipo de tarifa (ej. "Estudiante", "Regular").
 /// - `value`: valor/precio del pasaje.
 class Product {
-  final String id;         // _id del gateway
+  final int? localId;
+  final String id;
   final String productName;
   final double value;
   final bool pmr;
 
-  const Product({
+  Product({
+    this.localId,
     required this.id,
     required this.productName,
     required this.value,
     this.pmr = false,
   });
 
-  factory Product.fromJson(Map<String, dynamic> json) {
+  factory Product.fromMap(Map<String, dynamic> map) {
     return Product(
-      id: json['_id']?.toString() ?? json['id']?.toString() ?? '',
-      productName: json['product_name'] as String? ?? '',
-      value: (json['value'] as num?)?.toDouble() ?? 0,
-      pmr: json['pmr'] == 1 || json['pmr'] == true || json['pmr'] == '1',
+      localId: map['local_id'],
+      id: map['id'].toString(),
+      productName: map['product_name'] ?? 'Desconocido',
+      value: (map['value'] as num?)?.toDouble() ?? 0.0,
+      pmr: (map['pmr'] == 1 || map['pmr'] == true),
     );
   }
 
   /// Formato de visualización idéntico al Angular: "Valor: <value> | <nombre>"
-  String get displayLabel => 'Valor: ${value.toStringAsFixed(0)} | $productName';
+  String get displayLabel => 'Valor: ${CurrencyFormatter.format(value)} | $productName';
 
   @override
   String toString() => displayLabel;

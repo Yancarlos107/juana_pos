@@ -82,7 +82,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('${entry.value}x ${entry.key.productName}', style: const TextStyle(fontSize: 20)),
-                    Text('\$ ${_formatCurrency(entry.key.value * entry.value, showDecimals: false)}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    Text('\$ ${_formatCurrency(entry.key.value * entry.value)}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                   ],
                 ),
               );
@@ -95,7 +95,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text('Total a cobrar:', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                Text('\$ ${_formatCurrency(_cartTotalValue, showDecimals: false)}', 
+                Text('\$ ${_formatCurrency(_cartTotalValue)}', 
                     style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.green)),
               ],
             ),
@@ -386,7 +386,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                             style: TextStyle(fontSize: 14, color: Colors.redAccent))
                       else
                         Text(
-                          '\$ ${_formatCurrency(balanceState.balance, showDecimals: false)}',
+                          '\$ ${_formatCurrency(balanceState.balance)}',
                           style: const TextStyle(
                               fontSize: 26,
                               fontWeight: FontWeight.bold,
@@ -579,7 +579,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 child: ElevatedButton.icon(
                   onPressed: _cart.isEmpty ? null : _showCartSummaryDialog,
                   icon: const Icon(Icons.payment_rounded),
-                  label: Text('Confirmar Pago (\$ ${_formatCurrency(_cartTotalValue, showDecimals: false)})', 
+                  label: Text('Confirmar Pago (\$ ${_formatCurrency(_cartTotalValue)})', 
                       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF6642F8),
@@ -922,7 +922,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              '\$ ${_formatCurrency(product.value, showDecimals: false)}',
+              '\$ ${_formatCurrency(product.value)}',
               style: const TextStyle(
                   color: Color(0xFF6642F8),
                   fontWeight: FontWeight.w900,
@@ -1019,11 +1019,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     return const RecaudoScreen();
   }
 
-  String _formatCurrency(double value, {bool showDecimals = true}) {
-    final parts = value.toStringAsFixed(showDecimals ? 2 : 0).split('.');
-    final intPart = parts[0]
-        .replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
-    return showDecimals && parts.length > 1 ? '$intPart.${parts[1]}' : intPart;
+  String _formatCurrency(double value) {
+    final hasDecimals = value % 1 != 0;
+    if (hasDecimals) {
+      final parts = value.toStringAsFixed(2).split('.');
+      final intPart = parts[0].replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+      return '$intPart.${parts[1]}';
+    } else {
+      return value.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+    }
   }
 
   void _processPmr() async {

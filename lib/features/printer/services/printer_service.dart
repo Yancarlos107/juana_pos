@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/services.dart';
+import '../../auth/providers/auth_providers.dart';
+import '../../../core/utils/currency_formatter.dart';
 import 'package:flutter_thermal_printer/flutter_thermal_printer.dart';
 import 'package:flutter_thermal_printer/utils/printer.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -253,7 +255,7 @@ class PrinterService {
       bytes.addAll([0x1B, 0x45, 0x01]); // Bold
       bytes.addAll([0x1D, 0x21, 0x33]); // Tamaño GIGANTE (x4)
 
-      bytes.addAll(_text('\$${amount.toStringAsFixed(2)}\n'));
+      bytes.addAll(_text('\$${CurrencyFormatter.format(amount)}\n'));
 
       bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
       bytes.addAll([0x1D, 0x21, 0x00]); // Tamaño NORMAL
@@ -345,7 +347,7 @@ class PrinterService {
       bytes.addAll([0x1B, 0x61, 0x01]); // Center
       bytes.addAll([0x1B, 0x45, 0x01]);
       bytes.addAll([0x1D, 0x21, 0x11]);
-      bytes.addAll(_text('TOTAL: \$ ${totalAmount.toStringAsFixed(0)}\n'));
+      bytes.addAll(_text('TOTAL: \$ ${CurrencyFormatter.format(totalAmount)}\n'));
       bytes.addAll([0x1D, 0x21, 0x00]);
       bytes.addAll([0x1B, 0x45, 0x00]);
 

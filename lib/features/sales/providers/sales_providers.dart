@@ -7,6 +7,7 @@ import '../../../core/storage/local_storage_repository.dart';
 import '../../../core/database/database_helper.dart';
 import '../models/tarifa_model.dart';
 import '../services/sales_service.dart';
+import '../../../core/utils/currency_formatter.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../monitoring/services/system_status_service.dart';
 // ==================== Proveedor del Servicio ====================
@@ -227,7 +228,7 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
       // 1. Verificación de saldo local preventiva
       final currentBalance = await _storage.getBalance();
       if (currentBalance < product.value) {
-        throw Exception('Saldo insuficiente. Saldo actual: \$${currentBalance.toStringAsFixed(0)}. Requerido: \$${product.value.toStringAsFixed(0)}');
+        throw Exception('Saldo insuficiente. Saldo actual: \$${CurrencyFormatter.format(currentBalance)}. Requerido: \$${CurrencyFormatter.format(product.value)}');
       }
 
       // Se fuerza SIEMPRE la generación offline

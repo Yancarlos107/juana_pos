@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/services.dart';
+import '../../../core/utils/currency_formatter.dart';
 
 class EpsonEposService {
   static const MethodChannel _channel = MethodChannel('co.Juana.epson_printer');
@@ -73,7 +74,7 @@ class EpsonEposService {
     bytes.addAll([0x1B, 0x61, 0x01]);        // centro
     bytes.addAll([0x1B, 0x45, 0x01]);        // bold
     bytes.addAll([0x1D, 0x21, 0x10]);        // doble ancho
-    bytes.addAll(_text('${productName.toUpperCase()} \$ ${amount.toStringAsFixed(0)}\n'));
+    bytes.addAll(_text('${productName.toUpperCase()} \$ ${CurrencyFormatter.format(amount)}\n'));
     bytes.addAll([0x1B, 0x45, 0x00]);        // sin bold
 
     bytes.addAll(_cmdQrCode(qrData));
