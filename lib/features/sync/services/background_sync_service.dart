@@ -73,7 +73,7 @@ class BackgroundSyncService {
           final List<Map<String, dynamic>> tokens = pendingSales.map((tx) {
             return {
               "qr": tx['qr_data'],
-              "cashierid": cashierid,
+              "cashierid": tx['cashier_id'] ?? 1, // <- Se toma el ID REAL del cajero que hizo la venta
               "expiredtime": 60,
               "fareid": 1,
               "productid": tx['product_id'],
@@ -127,9 +127,15 @@ class BackgroundSyncService {
       if (pendingClosures.isNotEmpty) {
         for (final tx in pendingClosures) {
           try {
+            final txCashierId = tx['cashier_id'] ?? 1;
+            
+            // Buscar nombre del cajero
+            final userQuery = await db.query('users', where: 'id = ?', whereArgs: [txCashierId], limit: 1);
+            final txEmployeeName = userQuery.isNotEmpty ? (userQuery.first['name'] as String? ?? "Cajero") : "Cajero";
+
             final List<Map<String, dynamic>> tokenArr = [{
               "qr": tx['qr_data'],
-              "cashierid": cashierid,
+              "cashierid": txCashierId,
               "expiredtime": 60,
               "fareid": 1,
               "productid": "CIERRE DE CAJA",
@@ -146,7 +152,7 @@ class BackgroundSyncService {
               "lon": "0.0",
               "hw": deviceInfo['hw'],
               "ime": deviceInfo['ime'],
-              "employee_full_name": employeeFullName,
+              "employee_full_name": txEmployeeName,
               "typ": "RC172",
               "ver": "1.0.0"
             };
