@@ -273,12 +273,27 @@ class ClosingHelper {
       return;
     }
 
+    final db = await DatabaseHelper.instance.database;
+    final userRows = await db.query('users', limit: 1);
+    String cashierName = 'Operador';
+    if (userRows.isNotEmpty) {
+      cashierName = userRows.first['email']?.toString() ?? userRows.first['name']?.toString() ?? 'Operador';
+    }
+
+    final sessionRows = await db.query('sessions', where: 'status = ?', whereArgs: ['open']);
+    String startTimeLabel = 'Inicio de turno';
+    if (sessionRows.isNotEmpty) {
+      final openedAtStr = sessionRows.first['opened_at'] as String;
+      final openedDate = DateTime.tryParse(openedAtStr)?.toLocal();
+      if (openedDate != null) {
+        startTimeLabel = '${openedDate.day.toString().padLeft(2, '0')}/${openedDate.month.toString().padLeft(2, '0')}/${openedDate.year} ${openedDate.hour.toString().padLeft(2, '0')}:${openedDate.minute.toString().padLeft(2, '0')}:${openedDate.second.toString().padLeft(2, '0')}';
+      }
+    }
+
     final user = ref.read(authProvider).user;
     final storage = ref.read(localStorageProvider);
     final posName = await storage.getPosLocationName();
     final branchName = posName ?? user?.branchName ?? 'Sucursal Juana';
-    final cashierName = user?.name ?? 'Operador';
-
     final branchId = user?.branchId ?? 0;
 
     double totalAmount = 0;
@@ -358,7 +373,7 @@ class ClosingHelper {
       branchName: branchName,
       totalTransactions: unclosedSales.length - pmrCount,
       totalAmount: totalAmount,
-      startTime: 'Inicio de turno',
+      startTime: startTimeLabel,
       endTime: closingLabel,
       qrData: qrData,
       breakdown: breakdownLines,
