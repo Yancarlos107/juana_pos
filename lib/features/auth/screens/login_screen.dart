@@ -167,7 +167,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           totalTransactions: data['q'] ?? 0,
           totalAmount: (data['a'] as num?)?.toDouble() ?? 0,
           startTime: 'Turno',
-          endTime: data['d']?.toString() ?? '',
+          endTime: '${data['d']} ${data['t'] ?? ''}',
           qrData: qrData,
           pmrCount: data['pmr_q'] ?? 0,
           reprintsCount: 1,
