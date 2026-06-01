@@ -51,12 +51,13 @@ class InitService {
         final cashiersList = data['cashiers'] as List<dynamic>;
         final db = await DatabaseHelper.instance.database;
         final batch = db.batch();
+        batch.delete('users'); // Limpiamos la tabla para que no queden IDs fantasma del bug anterior
         for (var cData in cashiersList) {
           final u = cData['user'];
           final c = cData['cashier'];
           if (u != null && c != null) {
             batch.insert('users', {
-              'id': u['id'],
+              'id': c['id'],
               'email': u['phone_number'], // Usamos phone_number como login id
               'password_hash': u['device_login_password'], // Contraseña hasheada (sha1)
               'name': u['name'],
