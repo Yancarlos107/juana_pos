@@ -56,7 +56,7 @@ class TicketWidget extends StatelessWidget {
           ),
           if (branchName != null)
             Text(
-              branchName!,
+              '$cashierName - $branchName',
               style: const TextStyle(fontSize: 12, color: Colors.black54),
             ),
           const SizedBox(height: 6),

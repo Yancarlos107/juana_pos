@@ -284,7 +284,10 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
         orElse: () =>
             Product(id: pId, productName: 'Tarifa $pId', value: amount));
 
-    final cashierName = ref.read(authProvider).user?.name ?? 'Operador';
+    final db = await DatabaseHelper.instance.database;
+    final userRows = await db.query('users', limit: 1);
+    final authName = ref.read(authProvider).user?.name ?? 'Operador';
+    final cashierName = userRows.isNotEmpty ? (userRows.first['email']?.toString() ?? authName) : authName;
     final storage = ref.read(salesStorageProvider);
     final posName = await storage.getPosLocationName();
     final branchName = posName ?? ref.read(authProvider).user?.branchName ?? 'Sucursal Juana';

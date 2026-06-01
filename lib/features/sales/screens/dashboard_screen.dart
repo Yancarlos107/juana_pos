@@ -168,11 +168,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             final deviceHash = await storage.getDeviceHash();
             final serialNumber = '$deviceHash-${localId.toString().padLeft(7, '0')}';
 
+            final db = await DatabaseHelper.instance.database;
+            final userRows = await db.query('users', limit: 1);
+            final authName = ref.read(authProvider).user?.name ?? 'Operador';
+            final cashierName = userRows.isNotEmpty ? (userRows.first['email']?.toString() ?? authName) : authName;
+
             final printResult = await ref.read(printerServiceProvider).printTicket(
                   transactionId: serialNumber,
                   amount: product.value,
                   qrData: result.qrCode,
-                  cashierName: ref.read(authProvider).user?.name ?? 'Operador',
+                  cashierName: cashierName,
                   branchName: branchName,
                   productName: '${product.productName}$pmrLabel',
                 );

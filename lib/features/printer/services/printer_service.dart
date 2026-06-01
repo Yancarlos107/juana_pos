@@ -241,7 +241,7 @@ class PrinterService {
       bytes.addAll(_text('Corredor Central Norte\n'));
 
       if (branchName != null && branchName.trim().isNotEmpty) {
-        bytes.addAll(_text('${branchName.trim().toUpperCase()}\n'));
+        bytes.addAll(_text('$cashierName - ${branchName.trim().toUpperCase()}\n'));
       }
 
       if (isReprint) {
