@@ -226,8 +226,14 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
         status: QrPurchaseStatus.loading, errorMessage: null);
     try {
       // 1. Verificación de saldo local preventiva
+      final connectivityResult = await Connectivity().checkConnectivity();
+      final isOffline = connectivityResult.contains(ConnectivityResult.none) ||
+          connectivityResult.isEmpty;
+
       final currentBalance = await _storage.getBalance();
-      if (currentBalance < product.value) {
+      
+      // Permitir la venta si hay saldo suficiente O si la máquina está offline
+      if (currentBalance < product.value && !isOffline) {
         throw Exception('Saldo insuficiente. Saldo actual: \$${CurrencyFormatter.format(currentBalance)}. Requerido: \$${CurrencyFormatter.format(product.value)}');
       }
 
