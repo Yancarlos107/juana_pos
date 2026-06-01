@@ -172,12 +172,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             final db = await DatabaseHelper.instance.database;
             final userRows = await db.query('users', limit: 1);
             final cashierName = ref.read(authProvider).user?.email ?? 'Operador';
+            final cashierCode = (ref.read(authProvider).user?.email ?? '01').split('@').first;
 
             final printResult = await ref.read(printerServiceProvider).printTicket(
                   transactionId: serialNumber,
                   amount: product.value,
                   qrData: result.qrCode,
                   cashierName: cashierName,
+                  cashierCode: cashierCode,
                   branchName: branchName,
                   productName: '${product.productName}$pmrLabel',
                 );

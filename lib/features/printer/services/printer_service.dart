@@ -210,6 +210,7 @@ class PrinterService {
     required double amount,
     required String qrData,
     required String cashierName,
+    required String cashierCode,
     String? branchName,
     String? productName,
     bool isReprint = false,
@@ -243,6 +244,7 @@ class PrinterService {
       if (branchName != null && branchName.trim().isNotEmpty) {
         bytes.addAll(_text('$cashierName - ${branchName.trim().toUpperCase()}\n'));
       }
+      bytes.addAll(_text('Código: $cashierCode\n'));
 
       if (isReprint) {
         bytes.addAll(_text('*** REIMPRESIÓN ***\n'));

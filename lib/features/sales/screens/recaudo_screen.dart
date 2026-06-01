@@ -328,14 +328,21 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
       final deviceHash = await ref.read(salesStorageProvider).getDeviceHash();
       final serialNumber = '$deviceHash-${localId.toString().padLeft(7, '0')}';
 
+      final emailString = userQuery != null && userQuery.isNotEmpty 
+          ? userQuery.first['email']?.toString() ?? '01'
+          : ref.read(authProvider).user?.email ?? '01';
+      final cashierCode = emailString.split('@').first;
+
       printResult = await printer.printTicket(
         transactionId: serialNumber,
         amount: amount,
         qrData: qrData,
         cashierName: cashierName,
+        cashierCode: cashierCode,
         branchName: branchName,
         productName: prod.productName,
         isReprint: isReprint,
+        context: context,
       );
     }
 
