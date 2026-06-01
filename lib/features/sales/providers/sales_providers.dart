@@ -221,7 +221,7 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
 
   QrPurchaseNotifier(this._salesService, this._storage, this._statusNotifier) : super(const QrPurchaseState());
 
-  Future<bool> purchase({required Product product}) async {
+  Future<bool> purchase({required Product product, required int cashierId}) async {
     state = state.copyWith(
         status: QrPurchaseStatus.loading, errorMessage: null);
     try {
@@ -245,7 +245,6 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
       final qrCodeStr = String.fromCharCodes(Iterable.generate(
           32, (_) => chars.codeUnitAt(random.nextInt(chars.length))));
 
-
       
       // 2. Decrementar saldo local tras éxito
       final newBalance = currentBalance - product.value;
@@ -258,13 +257,10 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
       final sessionQuery = await db.query('sessions', where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
       final sessionId = sessionQuery.isNotEmpty ? sessionQuery.first['id'] : null;
 
-      final usersQuery = await db.query('users', limit: 1);
-      final currentCashierId = usersQuery.isNotEmpty ? (usersQuery.first['id'] as int?) ?? 1 : 1;
-
       final insertedLocalId = await db.insert('transactions', {
         'id': localId,
         'session_id': sessionId,
-        'cashier_id': currentCashierId,
+        'cashier_id': cashierId, // <- USAMOS EL CASHIER QUE ESTA LOGUEADO REALMENTE
         'product_id': product.id,
         'amount': product.value,
         'pmr': product.pmr ? 1 : 0,

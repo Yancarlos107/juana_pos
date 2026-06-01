@@ -274,11 +274,7 @@ class ClosingHelper {
     }
 
     final db = await DatabaseHelper.instance.database;
-    final userRows = await db.query('users', limit: 1);
-    String cashierName = 'Operador';
-    if (userRows.isNotEmpty) {
-      cashierName = userRows.first['email']?.toString() ?? userRows.first['name']?.toString() ?? 'Operador';
-    }
+    final cashierName = ref.read(authProvider).user?.email ?? 'Operador';
 
     final sessionRows = await db.query('sessions', where: 'status = ?', whereArgs: ['open']);
     String startTimeLabel = 'Inicio de turno';
@@ -398,8 +394,7 @@ class ClosingHelper {
       final sessionQuery = await db.query('sessions', where: 'status = ?', whereArgs: ['open']);
       final int? sessionId = sessionQuery.isNotEmpty ? sessionQuery.first['id'] as int : null;
 
-      final usersQuery = await db.query('users', limit: 1);
-      final currentCashierId = usersQuery.isNotEmpty ? (usersQuery.first['id'] as int?) ?? 1 : 1;
+      final currentCashierId = ref.read(authProvider).user?.id ?? 1;
 
       await db.insert('transactions', {
         'id': 'closure-${now.millisecondsSinceEpoch}',

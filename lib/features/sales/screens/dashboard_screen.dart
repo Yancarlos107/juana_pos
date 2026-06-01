@@ -151,7 +151,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       final quantity = entry.value;
 
       for (int i = 0; i < quantity; i++) {
-        await ref.read(qrPurchaseProvider.notifier).purchase(product: product);
+        final currentUserId = ref.read(authProvider).user?.id ?? 1;
+        await ref.read(qrPurchaseProvider.notifier).purchase(product: product, cashierId: currentUserId);
 
         final qrState = ref.read(qrPurchaseProvider);
         if (qrState.status == QrPurchaseStatus.success && qrState.result != null) {
