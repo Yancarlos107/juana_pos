@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/sales_providers.dart';
+import '../../../core/database/database_helper.dart';
 import '../../printer/services/printer_service.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../../auth/services/session_service.dart';

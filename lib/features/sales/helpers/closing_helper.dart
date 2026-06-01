@@ -398,15 +398,20 @@ class ClosingHelper {
       final sessionQuery = await db.query('sessions', where: 'status = ?', whereArgs: ['open']);
       final int? sessionId = sessionQuery.isNotEmpty ? sessionQuery.first['id'] as int : null;
 
+      final usersQuery = await db.query('users', limit: 1);
+      final currentCashierId = usersQuery.isNotEmpty ? (usersQuery.first['id'] as int?) ?? 1 : 1;
+
       await db.insert('transactions', {
-        'id': 'CIERRE-${DateTime.now().millisecondsSinceEpoch}',
+        'id': 'closure-${now.millisecondsSinceEpoch}',
         'session_id': sessionId,
+        'cashier_id': currentCashierId,
         'product_id': 'CIERRE DE CAJA',
         'amount': totalAmount,
         'pmr': 0,
         'status': 'pending',
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': now.toIso8601String(),
         'qr_data': qrData,
+        'print_status': printSuccess ? 1 : 0,
       });
 
       await ref.read(sessionServiceProvider).closeSession(branchId);

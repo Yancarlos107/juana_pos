@@ -2,6 +2,8 @@ import 'package:dio/dio.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/storage/local_storage_repository.dart';
 import '../../../core/database/database_helper.dart';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../models/user_model.dart';
@@ -54,7 +56,7 @@ class AuthService {
         {
           'id': user.id,
           'email': phoneOrEmail,
-          'password_hash': password, // Almacenado de forma simple para offline match
+          'password_hash': sha1.convert(utf8.encode(password)).toString(), // Almacenado como hash para offline match
           'name': user.name,
           'branch_id': user.branchId,
           'roles': user.roles.join(','),
@@ -91,10 +93,12 @@ class AuthService {
 
   Future<UserModel> _offlineLogin(String email, String password) async {
     final db = await DatabaseHelper.instance.database;
+    final String inputHash = sha1.convert(utf8.encode(password)).toString();
+    
     final results = await db.query(
       'users',
-      where: 'email = ? AND password_hash = ?',
-      whereArgs: [email, password],
+      where: 'email = ? AND (password_hash = ? OR password_hash = ?)',
+      whereArgs: [email, inputHash, password],
     );
     
     if (results.isEmpty) {

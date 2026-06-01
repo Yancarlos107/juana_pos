@@ -252,9 +252,13 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
       final sessionQuery = await db.query('sessions', where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
       final sessionId = sessionQuery.isNotEmpty ? sessionQuery.first['id'] : null;
 
+      final usersQuery = await db.query('users', limit: 1);
+      final currentCashierId = usersQuery.isNotEmpty ? (usersQuery.first['id'] as int?) ?? 1 : 1;
+
       final insertedLocalId = await db.insert('transactions', {
         'id': localId,
         'session_id': sessionId,
+        'cashier_id': currentCashierId,
         'product_id': product.id,
         'amount': product.value,
         'pmr': product.pmr ? 1 : 0,

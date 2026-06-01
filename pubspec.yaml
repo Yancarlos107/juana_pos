@@ -46,6 +46,7 @@ dependencies:
   connectivity_plus: ^6.1.0
   device_info_plus: ^10.1.0
   flutter_thermal_printer: 2.0.1
+  crypto: ^3.0.3
 
 dev_dependencies:
   flutter_test:

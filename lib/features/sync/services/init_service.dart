@@ -7,6 +7,8 @@ import '../../sales/models/novelty_model.dart';
 
 import '../../../core/network/dio_client.dart';
 import '../../auth/providers/auth_providers.dart';
+import '../../../core/database/database_helper.dart';
+import 'package:sqflite/sqflite.dart';
 
 final initServiceProvider = Provider<InitService>((ref) {
   final dio = ref.watch(dioProvider);
@@ -42,6 +44,28 @@ class InitService {
       if (data.containsKey('novelty_types')) {
         final noveltiesList = data['novelty_types'] as List<dynamic>;
         await _storage.saveNovelties(noveltiesList);
+      }
+
+      // 1.5. Guardar el catálogo de cajeros autorizados
+      if (data.containsKey('cashiers')) {
+        final cashiersList = data['cashiers'] as List<dynamic>;
+        final db = await DatabaseHelper.instance.database;
+        final batch = db.batch();
+        for (var cData in cashiersList) {
+          final u = cData['user'];
+          final c = cData['cashier'];
+          if (u != null && c != null) {
+            batch.insert('users', {
+              'id': u['id'],
+              'email': u['phone_number'], // Usamos phone_number como login id
+              'password_hash': u['device_login_password'], // Contraseña hasheada (sha1)
+              'name': u['name'],
+              'branch_id': c['branch_id'],
+              'roles': 'Cajero', // Rol por defecto offline
+            }, conflictAlgorithm: ConflictAlgorithm.replace);
+          }
+        }
+        await batch.commit(noResult: true);
       }
 
       // 2. Extraer y guardar puntos de venta
