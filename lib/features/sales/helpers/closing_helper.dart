@@ -10,6 +10,7 @@ import '../../../core/network/dio_client.dart';
 import '../../../core/database/database_helper.dart';
 import '../models/tarifa_model.dart';
 import '../../monitoring/services/system_status_service.dart';
+import '../../sync/services/background_sync_service.dart';
 
 class ClosingHelper {
   static String formatCurrency(double value) {
@@ -418,6 +419,11 @@ class ClosingHelper {
         context: context,
         barrierDismissible: false,
         builder: (ctx) => const Center(child: CircularProgressIndicator()));
+        
+    try {
+      await ref.read(backgroundSyncProvider).syncPendingData();
+    } catch (_) {}
+
     await ref.read(authProvider.notifier).logout();
     if (context.mounted) {
       Navigator.pop(context);
