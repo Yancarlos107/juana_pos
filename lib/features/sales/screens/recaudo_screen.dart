@@ -286,9 +286,15 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
             Product(id: pId, productName: 'Tarifa $pId', value: amount));
 
     final db = await DatabaseHelper.instance.database;
-    final userRows = await db.query('users', limit: 1);
-    final authName = ref.read(authProvider).user?.name ?? 'Operador';
-    final cashierName = userRows.isNotEmpty ? (userRows.first['email']?.toString() ?? authName) : authName;
+    final txCashierId = sale['cashier_id'] as int?;
+    final userQuery = txCashierId != null 
+        ? await db.query('users', where: 'id = ?', whereArgs: [txCashierId], limit: 1)
+        : null;
+    
+    final fallbackAuth = ref.read(authProvider).user?.email ?? 'Operador';
+    final cashierName = userQuery != null && userQuery.isNotEmpty 
+        ? (userQuery.first['email']?.toString() ?? fallbackAuth) 
+        : fallbackAuth;
     final storage = ref.read(salesStorageProvider);
     final posName = await storage.getPosLocationName();
     final branchName = posName ?? ref.read(authProvider).user?.branchName ?? 'Sucursal Juana';

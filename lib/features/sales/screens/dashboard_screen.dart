@@ -170,8 +170,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
             final db = await DatabaseHelper.instance.database;
             final userRows = await db.query('users', limit: 1);
-            final authName = ref.read(authProvider).user?.name ?? 'Operador';
-            final cashierName = userRows.isNotEmpty ? (userRows.first['email']?.toString() ?? authName) : authName;
+            final cashierName = ref.read(authProvider).user?.email ?? 'Operador';
 
             final printResult = await ref.read(printerServiceProvider).printTicket(
                   transactionId: serialNumber,
