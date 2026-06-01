@@ -8,7 +8,7 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-feature android:name="android.hardware.usb.host" />
     <application
-        android:label="red_recarga_pos"
+        android:label="Juana"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
