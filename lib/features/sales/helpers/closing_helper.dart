@@ -274,7 +274,7 @@ class ClosingHelper {
     }
 
     final db = await DatabaseHelper.instance.database;
-    final cashierName = ref.read(authProvider).user?.email ?? 'Operador';
+    final cashierName = ref.read(authProvider).user?.name ?? 'Operador';
 
     final sessionRows = await db.query('sessions', where: 'status = ?', whereArgs: ['open']);
     String startTimeLabel = 'Inicio de turno';

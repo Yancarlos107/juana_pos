@@ -322,7 +322,6 @@ class PrinterService {
       bytes.addAll(_text('$branchName\n\n'));
       bytes.addAll([0x1B, 0x61, 0x00]); // Left
       bytes.addAll(_text('Cajero: $cashierName\n'));
-      bytes.addAll(_text('Inicio: $startTime\n'));
       bytes.addAll(_text('Cierre: $endTime\n\n'));
 
       if (breakdown != null && breakdown.isNotEmpty) {

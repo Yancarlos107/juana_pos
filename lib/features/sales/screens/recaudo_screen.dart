@@ -291,9 +291,9 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
         ? await db.query('users', where: 'id = ?', whereArgs: [txCashierId], limit: 1)
         : null;
     
-    final fallbackAuth = ref.read(authProvider).user?.email ?? 'Operador';
+    final fallbackAuth = ref.read(authProvider).user?.name ?? 'Operador';
     final cashierName = userQuery != null && userQuery.isNotEmpty 
-        ? (userQuery.first['email']?.toString() ?? fallbackAuth) 
+        ? (userQuery.first['name']?.toString() ?? fallbackAuth) 
         : fallbackAuth;
     final storage = ref.read(salesStorageProvider);
     final posName = await storage.getPosLocationName();
