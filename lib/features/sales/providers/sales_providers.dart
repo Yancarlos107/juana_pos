@@ -359,13 +359,14 @@ class SalesHistoryNotifier extends StateNotifier<SalesHistoryState> {
       final now = DateTime.now();
       final todayStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
 
-      // Buscar por fecha para no borrar de la vista las que ya se cerraron hoy
+      // Buscar por fecha para no borrar de la vista las que ya se cerraron hoy,
+      // pero excluir las aperturas PMR de la vista de historial.
       final data = await db.rawQuery(
         '''
         SELECT t.*, p.product_name 
         FROM transactions t
         LEFT JOIN products p ON t.product_id = p.id
-        WHERE t.created_at LIKE ? 
+        WHERE t.created_at LIKE ? AND t.product_id != 'PMR'
         ORDER BY t.created_at DESC
         ''',
         ['$todayStr%']

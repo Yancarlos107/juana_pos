@@ -27,7 +27,7 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
   }
 
   void _showClosingConfirmation() {
-    ClosingHelper.showClosingConfirmation(context, ref, isLogout: false);
+    ClosingHelper.showClosingConfirmation(context, ref, isLogout: true);
   }
 
   @override
