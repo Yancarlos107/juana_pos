@@ -163,6 +163,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
         final printResult = await printer.printClosingTicket(
           cashierName: data['c']?.toString() ?? 'Operador',
+          cashierId: results.first['cashier_id']?.toString() ?? '1',
           branchName: 'Sucursal',
           totalTransactions: data['q'] ?? 0,
           totalAmount: (data['a'] as num?)?.toDouble() ?? 0,

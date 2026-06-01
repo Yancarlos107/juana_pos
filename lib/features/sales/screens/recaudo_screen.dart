@@ -310,6 +310,7 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
         final data = jsonDecode(jsonStr);
         printResult = await printer.printClosingTicket(
           cashierName: data['c']?.toString() ?? cashierName,
+          cashierId: txCashierId?.toString() ?? '1',
           branchName: branchName,
           totalTransactions: data['q'] ?? 0,
           totalAmount: (data['a'] as num?)?.toDouble() ?? amount,

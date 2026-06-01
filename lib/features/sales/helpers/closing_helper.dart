@@ -362,10 +362,11 @@ class ClosingHelper {
         barrierDismissible: false,
         builder: (ctx) => const Center(child: CircularProgressIndicator()));
 
-    // Imprimir — null = permiso USB pendiente (Epson)
+    final currentCashierId = ref.read(authProvider).user?.id ?? 1;
     final printer = ref.read(printerServiceProvider);
     final printResult = await printer.printClosingTicket(
       cashierName: cashierName,
+      cashierId: currentCashierId.toString(),
       branchName: branchName,
       totalTransactions: unclosedSales.length - pmrCount,
       totalAmount: totalAmount,
@@ -394,7 +395,6 @@ class ClosingHelper {
       final sessionQuery = await db.query('sessions', where: 'status = ?', whereArgs: ['open']);
       final int? sessionId = sessionQuery.isNotEmpty ? sessionQuery.first['id'] as int : null;
 
-      final currentCashierId = ref.read(authProvider).user?.id ?? 1;
 
       await db.insert('transactions', {
         'id': 'closure-${now.millisecondsSinceEpoch}',
