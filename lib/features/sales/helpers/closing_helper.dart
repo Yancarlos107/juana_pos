@@ -421,7 +421,7 @@ class ClosingHelper {
         builder: (ctx) => const Center(child: CircularProgressIndicator()));
         
     try {
-      await ref.read(backgroundSyncProvider).syncPendingData();
+      await ref.read(backgroundSyncProvider).syncPendingData().timeout(const Duration(seconds: 3));
     } catch (_) {}
 
     await ref.read(authProvider.notifier).logout();

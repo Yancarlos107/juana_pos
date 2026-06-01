@@ -1,5 +1,5 @@
 class ApiConstants {
-  static const String baseUrl = 'http://35.209.80.61:8089/api';
+  static const String baseUrl = 'http://35.208.37.141:8089/api';
 
   // Endpoints principales del POS Red de Recarga1
   static const String login = '/cashier-login';
