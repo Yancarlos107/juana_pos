@@ -1,3 +1,5 @@
+import '../../../core/utils/currency_formatter.dart';
+
 /// Modelo que representa un producto/tarifa del gateway.
 /// Se obtiene dinámicamente de GET /gateway/v1/products.
 ///
@@ -6,27 +8,24 @@
 /// - `product_name`: nombre del tipo de tarifa (ej. "Estudiante", "Regular").
 /// - `value`: valor/precio del pasaje.
 class Product {
-  final int? localId;
-  final String id;
+  final String id;         // _id del gateway
   final String productName;
   final double value;
   final bool pmr;
 
-  Product({
-    this.localId,
+  const Product({
     required this.id,
     required this.productName,
     required this.value,
     this.pmr = false,
   });
 
-  factory Product.fromMap(Map<String, dynamic> map) {
+  factory Product.fromJson(Map<String, dynamic> json) {
     return Product(
-      localId: map['local_id'],
-      id: map['id'].toString(),
-      productName: map['product_name'] ?? 'Desconocido',
-      value: (map['value'] as num?)?.toDouble() ?? 0.0,
-      pmr: (map['pmr'] == 1 || map['pmr'] == true),
+      id: json['_id']?.toString() ?? json['id']?.toString() ?? '',
+      productName: json['product_name'] as String? ?? '',
+      value: (json['value'] as num?)?.toDouble() ?? 0,
+      pmr: json['pmr'] == 1 || json['pmr'] == true || json['pmr'] == '1',
     );
   }
 
