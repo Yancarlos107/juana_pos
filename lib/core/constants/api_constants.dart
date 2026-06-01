@@ -1,5 +1,10 @@
 class ApiConstants {
-  static const String baseUrl = 'http://35.208.37.141:8089/api';
+  static const bool isProduction = true; // <-- Cambiar a false para usar el entorno de pruebas
+
+  static const String baseUrlProd = 'http://35.208.37.141:8089/api';
+  static const String baseUrlDev = 'http://35.209.80.61:8089/api';
+  
+  static const String baseUrl = isProduction ? baseUrlProd : baseUrlDev;
 
   // Endpoints principales del POS Red de Recarga1
   static const String login = '/cashier-login';
