@@ -9,6 +9,9 @@ import '../../../core/database/database_helper.dart';
 import '../../monitoring/services/system_status_service.dart';
 import '../../monitoring/services/system_status_service.dart';
 import 'dart:convert';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:app_settings/app_settings.dart';
 import '../../../core/widgets/kiosk_logo_button.dart';
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -202,6 +205,78 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
+  void _showSupportOptions() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Opciones de Soporte', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text('Seleccione una opción de soporte administrativo:'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              AppSettings.openAppSettings();
+            },
+            child: const Text('Ajustes del Sistema'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _exportTransactions();
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6642F8), foregroundColor: Colors.white),
+            child: const Text('Exportar Tramas a TXT'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _exportTransactions() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final db = await DatabaseHelper.instance.database;
+      final txs = await db.query('transactions');
+      
+      final dir = await getExternalStorageDirectory() ?? await getApplicationDocumentsDirectory();
+      final dateStr = DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
+      final file = File('${dir.path}/tramas_exportadas_$dateStr.txt');
+      
+      final sb = StringBuffer();
+      sb.writeln('=== EXPORTACIÓN DE TRAMAS ===');
+      sb.writeln('Fecha: ${DateTime.now().toIso8601String()}');
+      sb.writeln('Total registros: ${txs.length}');
+      sb.writeln('==============================\n');
+      
+      for (final tx in txs) {
+        sb.writeln(jsonEncode(tx));
+      }
+      
+      await file.writeAsString(sb.toString());
+      
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Archivo guardado en:\\n${file.path}', style: const TextStyle(fontWeight: FontWeight.bold)),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 10),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Error al exportar: $e', style: const TextStyle(fontWeight: FontWeight.bold)),
+          backgroundColor: Colors.redAccent,
+        ));
+      }
+    }
+  }
+
   void _onNumPadTap(String value) {
     if (_activeController == null) return;
     final text = _activeController!.text;
@@ -295,6 +370,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             child: KioskLogoButton(
               pin: '9999',
               requiredTaps: 3,
+              onSuccess: _showSupportOptions,
               child: Image.asset(
                 'assets/valliu-logo.png',
                 height: 90,

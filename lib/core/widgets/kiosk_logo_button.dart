@@ -6,12 +6,14 @@ class KioskLogoButton extends StatefulWidget {
   final Widget child;
   final String pin;
   final int requiredTaps;
+  final VoidCallback? onSuccess;
 
   const KioskLogoButton({
     super.key,
     required this.child,
     this.pin = '9999',
     this.requiredTaps = 3,
+    this.onSuccess,
   });
 
   @override
@@ -84,7 +86,12 @@ class _KioskLogoButtonState extends State<KioskLogoButton> {
                 ElevatedButton(
                   onPressed: () async {
                     if (pinController.text == widget.pin) {
-                      AppSettings.openAppSettings();
+                      Navigator.pop(ctx);
+                      if (widget.onSuccess != null) {
+                        widget.onSuccess!();
+                      } else {
+                        AppSettings.openAppSettings();
+                      }
                     } else {
                       setStateDialog(() {
                         isError = true;
