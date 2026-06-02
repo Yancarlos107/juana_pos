@@ -141,9 +141,7 @@ class SystemStatusNotifier extends StateNotifier<SystemStatus> {
     }
   }
 
-  Future<void> forceCheckPendingTransactions() async {
-    await _checkPendingTransactions();
-  }
+
 
   @override
   void dispose() {
