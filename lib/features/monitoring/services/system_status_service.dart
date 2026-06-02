@@ -48,64 +48,69 @@ class SystemStatusNotifier extends StateNotifier<SystemStatus> {
   }
 
   Future<void> _checkAllStatuses() async {
-    await _checkInternetPing();
-    await _checkPrinter();
-    await _checkPmr();
-    await _checkCameraPing();
-    await _checkPendingTransactions();
+    final isOnline = await _checkInternetPing();
+    final isPrinterConnected = await _checkPrinter();
+    final isPmrConnected = await _checkPmr();
+    final isCameraConnected = await _checkCameraPing();
+    final pendingCount = await _checkPendingTransactions();
+
+    // Actualizamos el estado de la UI una sola vez para evitar 5 rebuilds consecutivos
+    // que estaban causando lentitud extrema en la app cada 5 segundos.
+    if (mounted) {
+      state = state.copyWith(
+        isInternetConnected: isOnline,
+        isPrinterConnected: isPrinterConnected,
+        isPmrConnected: isPmrConnected,
+        isCameraConnected: isCameraConnected,
+        pendingTransactions: pendingCount,
+      );
+    }
   }
 
-  Future<void> _checkInternetPing() async {
+  Future<bool> _checkInternetPing() async {
     try {
-      // Ping a la propia API para validar conectividad real con el backend
       final response = await _dio.get('/user', options: Options(
         sendTimeout: const Duration(seconds: 3),
         receiveTimeout: const Duration(seconds: 3),
       ));
       
       final isOnline = (response.statusCode ?? 0) < 500;
-      state = state.copyWith(isInternetConnected: isOnline);
-
-      // Sincronización en segundo plano si hay red (independiente de pendientes)
       if (isOnline) {
         _syncService.syncPendingData();
       }
+      return isOnline;
     } catch (e) {
       if (e is DioException && e.response != null) {
-        // Si el servidor responde con un código de error (ej. 401 Unauthorized), 
-        // significa que SÍ hay internet y el servidor fue alcanzado.
-        state = state.copyWith(isInternetConnected: true);
         _syncService.syncPendingData();
-      } else {
-        state = state.copyWith(isInternetConnected: false);
+        return true;
       }
+      return false;
     }
   }
 
-  Future<void> _checkPrinter() async {
+  Future<bool> _checkPrinter() async {
     try {
-      final isConnected = await _printerService.pingPrinter();
-      state = state.copyWith(isPrinterConnected: isConnected);
+      return await _printerService.pingPrinter();
     } catch (_) {
-      state = state.copyWith(isPrinterConnected: false);
+      return false;
     }
   }
 
-  /// Fuerza un chequeo inmediato de la impresora (ej. antes de una venta)
+  /// Fuerza un chequeo inmediato de la impresora
   Future<bool> checkPrinterNow() async {
-    await _checkPrinter();
-    return state.isPrinterConnected;
+    final isConnected = await _checkPrinter();
+    if (mounted) {
+      state = state.copyWith(isPrinterConnected: isConnected);
+    }
+    return isConnected;
   }
 
-  Future<void> _checkPmr() async {
-    // TODO: Implementar ping al endpoint de la puerta PMR
-    // Por ahora simulado
-    state = state.copyWith(isPmrConnected: false);
+  Future<bool> _checkPmr() async {
+    return false;
   }
 
-  Future<void> _checkCameraPing() async {
+  Future<bool> _checkCameraPing() async {
     try {
-      // Mock temporal: Endpoint de la cámara
       final response = await _dio.get(
         'http://192.168.1.101', // IP placeholder
         options: Options(
@@ -113,21 +118,26 @@ class SystemStatusNotifier extends StateNotifier<SystemStatus> {
           receiveTimeout: const Duration(seconds: 2),
         ),
       );
-      state = state.copyWith(isCameraConnected: (response.statusCode ?? 0) < 500);
+      return (response.statusCode ?? 0) < 500;
     } catch (_) {
-      state = state.copyWith(isCameraConnected: false);
+      return false;
     }
   }
 
-  Future<void> _checkPendingTransactions() async {
+  Future<int> _checkPendingTransactions() async {
     try {
       final db = await DatabaseHelper.instance.database;
       final result = await db.rawQuery('SELECT COUNT(*) as count FROM transactions WHERE status = ?', ['pending']);
-      int count = Sqflite.firstIntValue(result) ?? 0;
-      
-      state = state.copyWith(pendingTransactions: count);
+      return Sqflite.firstIntValue(result) ?? 0;
     } catch (e) {
-      print('Error checking pending transactions: $e');
+      return 0;
+    }
+  }
+
+  Future<void> forceCheckPendingTransactions() async {
+    final count = await _checkPendingTransactions();
+    if (mounted) {
+      state = state.copyWith(pendingTransactions: count);
     }
   }
 
