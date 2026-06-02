@@ -70,60 +70,73 @@ class BackgroundSyncService {
       // Obtener el ID de la ubicación POS
       final posLocationId = await _storage.getPosLocationId();
 
-      // Sincronizar Ventas (RC173)
+      // Sincronizar Ventas (RC173) en bloques desescalonados (chunking)
       if (pendingSales.isNotEmpty) {
-        try {
-          final List<Map<String, dynamic>> tokens = pendingSales.map((tx) {
-            return {
-              "qr": tx['qr_data'],
-              "cashierid": tx['cashier_id'] ?? 1, // <- Se toma el ID REAL del cajero que hizo la venta
-              "expiredtime": 60,
-              "fareid": 1,
-              "productid": tx['product_id'],
-              "versionid": 1,
-              "datetime": DateTime.parse(tx['created_at'].toString()).millisecondsSinceEpoch ~/ 1000
+        const int chunkSize = 50;
+        for (int i = 0; i < pendingSales.length; i += chunkSize) {
+          int endIndex = i + chunkSize;
+          if (endIndex > pendingSales.length) {
+            endIndex = pendingSales.length;
+          }
+          final chunk = pendingSales.sublist(i, endIndex);
+
+          try {
+            final List<Map<String, dynamic>> tokens = chunk.map((tx) {
+              return {
+                "qr": tx['qr_data'],
+                "cashierid": tx['cashier_id'] ?? 1, // <- Se toma el ID REAL del cajero que hizo la venta
+                "expiredtime": 60,
+                "fareid": 1,
+                "productid": tx['product_id'],
+                "versionid": 1,
+                "datetime": DateTime.parse(tx['created_at'].toString()).millisecondsSinceEpoch ~/ 1000
+              };
+            }).toList();
+
+            final payload = {
+              "plot_id": _generatePlotId(),
+              "type_code": "RC173",
+              "dat": (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString(),
+              "token": tokens,
+              "lat": "0.0",
+              "lon": "0.0",
+              "hw": deviceInfo['hw'],
+              "ime": deviceInfo['ime'],
+              "employee_full_name": employeeFullName,
+              "typ": "RC173",
+              "ver": "1.0.0",
+              if (posLocationId != null) "pos_location_id": posLocationId.toString(),
             };
-          }).toList();
 
-          final payload = {
-            "plot_id": _generatePlotId(),
-            "type_code": "RC173",
-            "dat": (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString(),
-            "token": tokens,
-            "lat": "0.0",
-            "lon": "0.0",
-            "hw": deviceInfo['hw'],
-            "ime": deviceInfo['ime'],
-            "employee_full_name": employeeFullName,
-            "typ": "RC173",
-            "ver": "1.0.0",
-            if (posLocationId != null) "pos_location_id": posLocationId.toString(),
-          };
+            // Endpoint de transacciones
+            final response = await _dio.post('/pos-transactions/rc173', data: payload);
 
-          // Endpoint de transacciones
-          final response = await _dio.post('/pos-transactions/rc173', data: payload);
-
-          if (response.statusCode == 200 || response.statusCode == 201) {
-            final batch = db.batch();
-            for (final tx in pendingSales) {
-              batch.update('transactions', {'status': 'synced'},
-                  where: 'local_id = ?', whereArgs: [tx['local_id']]);
+            if (response.statusCode == 200 || response.statusCode == 201) {
+              final batch = db.batch();
+              for (final tx in chunk) {
+                batch.update('transactions', {'status': 'synced'},
+                    where: 'local_id = ?', whereArgs: [tx['local_id']]);
+              }
+              await batch.commit(noResult: true);
+              _ref.read(systemStatusProvider.notifier).forceCheckPendingTransactions();
+              print('DEBUG: Bloque de ${chunk.length} ventas offline sincronizadas masivamente (RC173).');
+            } else {
+              print('DEBUG: Fallo en bloque RC173, status ${response.statusCode}. Abortando siguientes bloques.');
+              break;
             }
-            await batch.commit(noResult: true);
-            _ref.read(systemStatusProvider.notifier).forceCheckPendingTransactions();
-            print('DEBUG: ${pendingSales.length} ventas offline sincronizadas masivamente (RC173).');
-          }
-        } catch (e) {
-          String errorMessage = e.toString().split('\n').first;
-          if (e is DioException && e.response != null) {
-            final bodyData = e.response?.data;
-            if (bodyData is Map && bodyData.containsKey('message')) {
-              errorMessage = bodyData['message'].toString();
-            } else if (bodyData != null) {
-              errorMessage = bodyData.toString();
+          } catch (e) {
+            String errorMessage = e.toString().split('\n').first;
+            if (e is DioException && e.response != null) {
+              final bodyData = e.response?.data;
+              if (bodyData is Map && bodyData.containsKey('message')) {
+                errorMessage = bodyData['message'].toString();
+              } else if (bodyData != null) {
+                errorMessage = bodyData.toString();
+              }
             }
+            print('DEBUG: Fallo al sincronizar bloque RC173: $errorMessage. Abortando siguientes bloques.');
+            break;
           }
-          print('DEBUG: Fallo al sincronizar tramas masivas RC173: $errorMessage');
         }
       }
 
