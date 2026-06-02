@@ -317,10 +317,8 @@ class ClosingHelper {
     }
 
     final user = ref.read(authProvider).user;
-    final storage = ref.read(localStorageProvider);
     final posName = await storage.getPosLocationName();
     final branchName = posName ?? user?.branchName ?? 'Sucursal Juana';
-    final branchId = user?.branchId ?? 0;
 
     double totalAmount = 0;
     Map<String, int> breakdownQty = {};
