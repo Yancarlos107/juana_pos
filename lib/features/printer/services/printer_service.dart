@@ -316,7 +316,7 @@ class PrinterService {
 
       final bytes = <int>[];
       bytes.addAll([0x1B, 0x40]); // Init
-      bytes.addAll([0x1B, 0x61, 0x01]); // Center
+      bytes.addAll([0x1B, 0x61, 0x00]); // Left (Justificado a la izquierda)
       bytes.addAll([0x1B, 0x45, 0x01]); // Bold
       bytes.addAll([0x1D, 0x21, 0x11]); // Tamaño x2
       bytes.addAll(_text('CIERRE DE CAJA\n'));
@@ -348,7 +348,7 @@ class PrinterService {
       bytes.addAll([0x1B, 0x61, 0x00]); // Left
       bytes.addAll(_text('Transacciones: $totalTransactions\n'));
       bytes.addAll(_text('Reimpresiones: $reprintsCount\n\n')); // NEW
-      bytes.addAll([0x1B, 0x61, 0x01]); // Center
+      bytes.addAll([0x1B, 0x61, 0x00]); // Left
       bytes.addAll([0x1B, 0x45, 0x01]);
       bytes.addAll([0x1D, 0x21, 0x11]);
       bytes.addAll(_text('TOTAL: \$ ${CurrencyFormatter.format(totalAmount)}\n'));

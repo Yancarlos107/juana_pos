@@ -7,8 +7,9 @@ import '../widgets/location_selection_dialog.dart';
 import '../../sales/services/closure_service.dart';
 import '../../../core/database/database_helper.dart';
 import '../../monitoring/services/system_status_service.dart';
+import '../../monitoring/services/system_status_service.dart';
 import 'dart:convert';
-
+import '../../../core/widgets/kiosk_logo_button.dart';
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -291,17 +292,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Center(
-            child: Image.asset(
-              'assets/valliu-logo.png',
-              height: 90,
-              errorBuilder: (ctx, err, stack) => Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF6642F8).withOpacity(0.1),
-                  shape: BoxShape.circle,
+            child: KioskLogoButton(
+              pin: '9999',
+              requiredTaps: 3,
+              child: Image.asset(
+                'assets/valliu-logo.png',
+                height: 90,
+                errorBuilder: (ctx, err, stack) => Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6642F8).withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.point_of_sale_rounded,
+                      color: Color(0xFF6642F8), size: 40),
                 ),
-                child: const Icon(Icons.point_of_sale_rounded,
-                    color: Color(0xFF6642F8), size: 40),
               ),
             ),
           ),

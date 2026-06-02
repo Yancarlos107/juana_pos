@@ -67,6 +67,9 @@ class BackgroundSyncService {
       final pendingSales = pending.where((tx) => tx['product_id'] != 'CIERRE DE CAJA').toList();
       final pendingClosures = pending.where((tx) => tx['product_id'] == 'CIERRE DE CAJA').toList();
 
+      // Obtener el ID de la ubicación POS
+      final posLocationId = await _storage.getPosLocationId();
+
       // Sincronizar Ventas (RC173)
       if (pendingSales.isNotEmpty) {
         try {
@@ -93,7 +96,8 @@ class BackgroundSyncService {
             "ime": deviceInfo['ime'],
             "employee_full_name": employeeFullName,
             "typ": "RC173",
-            "ver": "1.0.0"
+            "ver": "1.0.0",
+            if (posLocationId != null) "pos_location_id": posLocationId.toString(),
           };
 
           // Endpoint de transacciones
@@ -154,7 +158,8 @@ class BackgroundSyncService {
               "ime": deviceInfo['ime'],
               "employee_full_name": txEmployeeName,
               "typ": "RC172",
-              "ver": "1.0.0"
+              "ver": "1.0.0",
+              if (posLocationId != null) "pos_location_id": posLocationId.toString(),
             };
 
             final response = await _dio.post('/pos-transactions', data: payload);
