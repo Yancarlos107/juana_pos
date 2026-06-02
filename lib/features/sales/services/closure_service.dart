@@ -87,8 +87,8 @@ class ClosureService {
         
         hexTokens = txs
             .map((tx) => tx['qr_data'].toString())
-            // Solo aquellos que parecen ser tokens hex SHA1 (vienen del gateway v2)
-            .where((qr) => qr.length == 40 && !qr.startsWith('{'))
+            // Accept 40 char v2 gateway QRs and 32 char local Flutter QRs
+            .where((qr) => (qr.length == 40 || qr.length == 32) && !qr.startsWith('{'))
             .toList();
       }
 

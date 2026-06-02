@@ -24,11 +24,32 @@ class ClosingHelper {
     }
   }
 
-  static void showClosingConfirmation(BuildContext context, WidgetRef ref, {bool isLogout = false}) {
-    final state = ref.read(salesHistoryProvider);
-    final unclosedSales =
-        state.sales.where((s) => s['is_closed'] != true).toList();
+  static Future<void> showClosingConfirmation(BuildContext context, WidgetRef ref, {bool isLogout = false}) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+          child: CircularProgressIndicator(color: Color(0xFF6642F8))),
+    );
+
+    final db = await DatabaseHelper.instance.database;
+    final storage = ref.read(localStorageProvider);
+    final branchId = await storage.getBranchId() ?? 0;
     
+    final sessionQuery = await db.query('sessions', where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
+    
+    if (context.mounted) Navigator.pop(context); // Cerrar loader
+    
+    if (sessionQuery.isEmpty) {
+      if (isLogout) {
+        _executeLogout(context, ref);
+      }
+      return;
+    }
+
+    final sessionId = sessionQuery.first['id'] as int;
+    final unclosedSales = await db.query('transactions', where: 'session_id = ?', whereArgs: [sessionId]);
+
     if (unclosedSales.isEmpty) {
       if (isLogout) {
         _executeLogout(context, ref);
@@ -265,18 +286,27 @@ class ClosingHelper {
   }
 
   static Future<void> _performClosing(BuildContext context, WidgetRef ref, bool isLogout) async {
-    final state = ref.read(salesHistoryProvider);
-    final unclosedSales =
-        state.sales.where((s) => s['is_closed'] != true).toList();
+    final db = await DatabaseHelper.instance.database;
+    final storage = ref.read(localStorageProvider);
+    final branchId = await storage.getBranchId() ?? 0;
+    
+    final sessionRows = await db.query('sessions', where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
+    
+    if (sessionRows.isEmpty) {
+      if (isLogout) _executeLogout(context, ref);
+      return;
+    }
+
+    final sessionId = sessionRows.first['id'] as int;
+    final unclosedSales = await db.query('transactions', where: 'session_id = ?', whereArgs: [sessionId]);
+
     if (unclosedSales.isEmpty) {
       if (isLogout) _executeLogout(context, ref);
       return;
     }
 
-    final db = await DatabaseHelper.instance.database;
     final cashierName = ref.read(authProvider).user?.name ?? 'Operador';
 
-    final sessionRows = await db.query('sessions', where: 'status = ?', whereArgs: ['open']);
     String startTimeLabel = 'Inicio de turno';
     if (sessionRows.isNotEmpty) {
       final openedAtStr = sessionRows.first['opened_at'] as String;
@@ -391,14 +421,12 @@ class ClosingHelper {
     if (context.mounted) Navigator.pop(context); // Quitar loader
 
     try {
-      final db = await DatabaseHelper.instance.database;
-      final sessionQuery = await db.query('sessions', where: 'status = ?', whereArgs: ['open']);
-      final int? sessionId = sessionQuery.isNotEmpty ? sessionQuery.first['id'] as int : null;
-
+      final sessionQuery = await db.query('sessions', where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
+      final int? currentSessionId = sessionQuery.isNotEmpty ? sessionQuery.first['id'] as int : null;
 
       await db.insert('transactions', {
         'id': 'closure-${now.millisecondsSinceEpoch}',
-        'session_id': sessionId,
+        'session_id': currentSessionId,
         'cashier_id': currentCashierId,
         'product_id': 'CIERRE DE CAJA',
         'amount': totalAmount,
