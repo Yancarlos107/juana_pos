@@ -242,9 +242,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final db = await DatabaseHelper.instance.database;
       final txs = await db.query('transactions');
       
-      final dir = await getExternalStorageDirectory() ?? await getApplicationDocumentsDirectory();
       final dateStr = DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
-      final file = File('${dir.path}/tramas_exportadas_$dateStr.txt');
+      final file = File('/sdcard/tramas_exportadas_$dateStr.txt');
       
       final sb = StringBuffer();
       sb.writeln('=== EXPORTACIÓN DE TRAMAS ===');
