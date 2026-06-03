@@ -242,8 +242,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final db = await DatabaseHelper.instance.database;
       final txs = await db.query('transactions');
       
+      final extDir = await getExternalStorageDirectory();
+      String basePath = extDir?.path ?? '/storage/emulated/0/Download';
+      if (basePath.contains('Android/data')) {
+        basePath = '${basePath.substring(0, basePath.indexOf('Android/data'))}Download';
+      }
       final dateStr = DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
-      final file = File('/sdcard/tramas_exportadas_$dateStr.txt');
+      final file = File('$basePath/tramas_exportadas_$dateStr.txt');
       
       final sb = StringBuffer();
       sb.writeln('=== EXPORTACIÓN DE TRAMAS ===');
