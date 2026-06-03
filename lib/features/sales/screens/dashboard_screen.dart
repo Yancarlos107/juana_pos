@@ -35,6 +35,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await ref.read(authProvider.notifier).restoreOfflineUser();
+
       // Cargamos el saldo local inmediatamente para evitar parpadeos
       ref.read(balanceProvider.notifier).loadLocalBalance();
       _loadBalance();
@@ -171,7 +173,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
             final db = await DatabaseHelper.instance.database;
             final userRows = await db.query('users', limit: 1);
-            final cashierName = ref.read(authProvider).user?.email ?? 'Operador';
+            final cashierName = ref.read(authProvider).user?.name ?? 'Operador';
             final cashierCode = (ref.read(authProvider).user?.email ?? '01').split('@').first;
 
             final printResult = await ref.read(printerServiceProvider).printTicket(

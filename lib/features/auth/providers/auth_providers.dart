@@ -3,6 +3,7 @@ import '../../../core/network/dio_client.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../services/session_service.dart';
+import '../../../core/database/database_helper.dart';
 
 /// Proveedor del servicio de autenticación
 final authServiceProvider = Provider<AuthService>((ref) {
@@ -73,6 +74,30 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> logout() async {
     await _authService.logout();
     state = const AuthState(status: AuthStatus.unauthenticated);
+  }
+
+  /// Restaura el usuario desde SQLite si el estado se perdió (ej. reinicio en background)
+  Future<void> restoreOfflineUser() async {
+    if (state.user != null) return;
+    try {
+      final db = await DatabaseHelper.instance.database;
+      final results = await db.query('users', limit: 1);
+      if (results.isNotEmpty) {
+        final userRow = results.first;
+        final user = UserModel(
+          id: userRow['id'] as int? ?? 0,
+          name: userRow['name']?.toString() ?? 'Operador',
+          email: userRow['email']?.toString() ?? '01',
+          branchId: userRow['branch_id'] as int? ?? 0,
+          branchName: 'Sucursal',
+          initialBalance: 0.0,
+          roles: (userRow['roles']?.toString() ?? '').split(','),
+        );
+        state = state.copyWith(status: AuthStatus.authenticated, user: user);
+      }
+    } catch (e) {
+      // Fallback silencioso
+    }
   }
 }
 

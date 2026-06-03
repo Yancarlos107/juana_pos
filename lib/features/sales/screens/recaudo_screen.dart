@@ -22,7 +22,8 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await ref.read(authProvider.notifier).restoreOfflineUser();
       ref.read(salesHistoryProvider.notifier).fetchHistory();
     });
   }
