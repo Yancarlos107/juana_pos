@@ -1,5 +1,5 @@
 class ApiConstants {
-  static const bool isProduction = false; // <-- Cambiar a false para usar el entorno de pruebas
+  static const bool isProduction = true; // <-- Cambiar a false para usar el entorno de pruebas
 
   static const String baseUrlProd = 'http://35.208.37.141:8089/api';
   static const String baseUrlDev = 'http://35.209.80.61:8089/api';
