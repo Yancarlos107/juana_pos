@@ -41,6 +41,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       ref.read(balanceProvider.notifier).loadLocalBalance();
       _loadBalance();
       ref.read(productsProvider.notifier).fetchProducts();
+      ref.read(systemStatusProvider.notifier).forceCheckPendingTransactions();
 
       final storage = ref.read(localStorageProvider);
       final posName = await storage.getPosLocationName();

@@ -37,7 +37,7 @@ class ClosureService {
     return {"hw": hw, "ime": ime};
   }
 
-  /// Realiza la Apertura de Caja (RC171) en el backend
+  /// Realiza la Apertura de Caja (RC174) en el backend
   Future<void> openRegister(String cashierName) async {
     try {
       final token = await _storage.getToken();
@@ -49,7 +49,7 @@ class ClosureService {
       await _dio.post(
         '/pos-transactions',
         data: {
-          "type_code": "RC171",
+          "type_code": "RC174",
           "token": "",
           "dat": (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString(),
           "lat": "0.0",
@@ -57,7 +57,7 @@ class ClosureService {
           "hw": deviceInfo['hw'],
           "ime": deviceInfo['ime'],
           "employee_full_name": cashierName,
-          "typ": "RC171",
+          "typ": "RC174",
           "ver": "1.0.0",
           if (posLocationId != null) "pos_location_id": posLocationId,
         },
@@ -68,9 +68,9 @@ class ClosureService {
           },
         ),
       );
-      print('Apertura de caja RC171 enviada con éxito.');
+      print('Apertura de caja RC174 enviada con éxito.');
     } catch (e) {
-      print('Advertencia: Falló apertura de caja RC171: $e');
+      print('Advertencia: Falló apertura de caja RC174: $e');
     }
   }
 

@@ -9,7 +9,7 @@ import '../widgets/location_selection_dialog.dart';
 import '../../sales/services/closure_service.dart';
 import '../../../core/database/database_helper.dart';
 import '../../monitoring/services/system_status_service.dart';
-import '../../monitoring/services/system_status_service.dart';
+import '../../../core/network/dio_client.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
@@ -221,9 +221,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               'lat': gpsData?['lat'],
               'lon': gpsData?['lon'],
             });
-            print('DEBUG: Transacción de APERTURA DE CAJA guardada localmente para desencole (RC171).');
+            print('DEBUG: Transacción de APERTURA DE CAJA guardada localmente para desencole (RC174).');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Caja abierta offline exitosamente (RC174)'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            }
           } catch (e) {
             print('DEBUG: Error al guardar APERTURA DE CAJA: $e');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Error guardando RC174: $e'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
           }
 
           Navigator.pushReplacementNamed(context, '/dashboard');

@@ -80,10 +80,18 @@ class PrinterService {
       if (_lastVendorId != null) {
         final hardwareConnected = await checkHardwareConnection();
         if (!hardwareConnected) {
-          print(
-              'DEBUG: Impresora física desconectada (vendor/product no encontrado).');
-          return false;
+          print('DEBUG: Impresora física desconectada. Purgando IDs guardados y forzando escaneo limpio.');
+          _lastVendorId = null;
+          _lastProductId = null;
         }
+      }
+
+      // Siempre purgar conexión fantasma antes de intentar reconectar
+      if (_connectedPrinter != null) {
+        try {
+          await _printer.disconnect(_connectedPrinter!);
+        } catch (_) {}
+        _connectedPrinter = null;
       }
 
       final printers = await scanUsbPrinters();
@@ -209,8 +217,51 @@ class PrinterService {
     required String transactionId,
     required double amount,
     required String qrData,
-    required String cashierName, // Lo mantenemos por si el código externo lo envía, pero no lo imprimimos
-    required String cashierCode, // Ídem
+    required String cashierName,
+    required String cashierCode,
+    int? posLocationId,
+    String? branchName,
+    String? productName,
+    bool isReprint = false,
+    dynamic context,
+  }) async {
+    bool? success = await _printTicketInternal(
+      transactionId: transactionId,
+      amount: amount,
+      qrData: qrData,
+      cashierName: cashierName,
+      cashierCode: cashierCode,
+      posLocationId: posLocationId,
+      branchName: branchName,
+      productName: productName,
+      isReprint: isReprint,
+      context: context,
+    );
+    if (success == false) {
+      print('DEBUG: Fallo primer intento, reintentando en 500ms...');
+      await Future.delayed(const Duration(milliseconds: 500));
+      success = await _printTicketInternal(
+        transactionId: transactionId,
+        amount: amount,
+        qrData: qrData,
+        cashierName: cashierName,
+        cashierCode: cashierCode,
+        posLocationId: posLocationId,
+        branchName: branchName,
+        productName: productName,
+        isReprint: isReprint,
+        context: context,
+      );
+    }
+    return success;
+  }
+
+  Future<bool?> _printTicketInternal({
+    required String transactionId,
+    required double amount,
+    required String qrData,
+    required String cashierName,
+    required String cashierCode,
     int? posLocationId,
     String? branchName,
     String? productName,
@@ -219,11 +270,6 @@ class PrinterService {
   }) async {
     print('DEBUG: Iniciando impresión de venta...');
     try {
-      final hardwareConnected = await checkHardwareConnection();
-      if (!hardwareConnected) {
-        print('DEBUG: Hardware desconectado abortando printTicket.');
-        return false;
-      }
 
       print('DEBUG: Generando bytes ESC/POS...');
       // Forzamos UTC-5 para Ecuador/Colombia
@@ -307,13 +353,63 @@ class PrinterService {
     int reprintsCount = 0,
     dynamic context,
   }) async {
+    bool? success = await _printClosingTicketInternal(
+      cashierName: cashierName,
+      cashierId: cashierId,
+      branchName: branchName,
+      totalTransactions: totalTransactions,
+      totalAmount: totalAmount,
+      startTime: startTime,
+      endTime: endTime,
+      posLocationId: posLocationId,
+      qrData: qrData,
+      breakdown: breakdown,
+      pmrCount: pmrCount,
+      pmrHours: pmrHours,
+      reprintsCount: reprintsCount,
+      context: context,
+    );
+    if (success == false) {
+      print('DEBUG: Fallo primer intento de cierre, reintentando en 500ms...');
+      await Future.delayed(const Duration(milliseconds: 500));
+      success = await _printClosingTicketInternal(
+        cashierName: cashierName,
+        cashierId: cashierId,
+        branchName: branchName,
+        totalTransactions: totalTransactions,
+        totalAmount: totalAmount,
+        startTime: startTime,
+        endTime: endTime,
+        posLocationId: posLocationId,
+        qrData: qrData,
+        breakdown: breakdown,
+        pmrCount: pmrCount,
+        pmrHours: pmrHours,
+        reprintsCount: reprintsCount,
+        context: context,
+      );
+    }
+    return success;
+  }
+
+  Future<bool?> _printClosingTicketInternal({
+    required String cashierName,
+    required String cashierId,
+    required String branchName,
+    required int totalTransactions,
+    required double totalAmount,
+    required String startTime,
+    required String endTime,
+    int? posLocationId,
+    String? qrData,
+    List<String>? breakdown,
+    int pmrCount = 0,
+    List<String>? pmrHours,
+    int reprintsCount = 0,
+    dynamic context,
+  }) async {
     print('DEBUG: Iniciando impresión de CIERRE (Conexión forzada)...');
     try {
-      final hardwareConnected = await checkHardwareConnection();
-      if (!hardwareConnected) {
-        print('DEBUG: Hardware desconectado abortando cierre.');
-        return false;
-      }
 
       final bytes = <int>[];
       bytes.addAll([0x1B, 0x40]); // Init

@@ -3,12 +3,11 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../monitoring/services/system_status_service.dart';
-import '../../../main.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter/material.dart';
-import '../../../../main.dart';
+import 'package:sqflite/sqflite.dart';
+import '../../../main.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/storage/local_storage_repository.dart';
@@ -65,12 +64,16 @@ class BackgroundSyncService {
     final deviceInfo = await _getDeviceInfo();
 
     try {
-      final pendingSales =
-          pending.where((tx) => tx['product_id'] != 'CIERRE DE CAJA' && tx['product_id'] != 'APERTURA DE CAJA').toList();
+      final pendingSales = pending
+          .where((tx) =>
+              tx['product_id'] != 'CIERRE DE CAJA' &&
+              tx['product_id'] != 'APERTURA DE CAJA')
+          .toList();
       final pendingClosures =
           pending.where((tx) => tx['product_id'] == 'CIERRE DE CAJA').toList();
-      final pendingOpenings =
-          pending.where((tx) => tx['product_id'] == 'APERTURA DE CAJA').toList();
+      final pendingOpenings = pending
+          .where((tx) => tx['product_id'] == 'APERTURA DE CAJA')
+          .toList();
 
       // Obtener el ID de la ubicación POS
       final posLocationId = await _storage.getPosLocationId();
@@ -126,20 +129,44 @@ class BackgroundSyncService {
             }).toList();
 
             final payload = {
-              "plot_id_container": _generatePlotId(),
+              "plot_id": _generatePlotId(),
+              "type_code": "RC173",
+              "dat": (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString(),
               "token": tokens,
-              "typ": "RC175",
+              "lat": "0.0",
+              "lon": "0.0",
+              "hw": "-1",
+              "ime": "-1",
+              "employee_full_name": "-1",
+              "typ": "RC173",
               "ver": "1.0.0",
+              "pos_location_id": "-1",
             };
             // Loggear el body completo para validación
-            print('DEBUG: [RC175] Payload a enviar:');
+            print('DEBUG: [RC173] Payload a enviar:');
             print(jsonEncode(payload));
 
-            // Endpoint de transacciones
-            final response =
-                await _dio.post('/pos-transactions/rc173', data: payload);
+            scaffoldMessengerKey.currentState?.showSnackBar(
+              SnackBar(
+                content: Text(
+                    'Enviando bloque de ${chunk.length} ventas (RC173)...'),
+                backgroundColor: Colors.blueAccent,
+                duration: const Duration(seconds: 2),
+              ),
+            );
 
-            if (response.statusCode == 200 || response.statusCode == 201) {
+            // Endpoint de transacciones
+            final response = await _dio.post(
+              '/pos-transactions/rc173',
+              data: payload,
+              options: Options(
+                validateStatus: (status) => status != null && status < 500,
+              ),
+            );
+
+            if (response.statusCode == 200 ||
+                response.statusCode == 201 ||
+                response.statusCode == 409) {
               final batch = db.batch();
               for (final tx in chunk) {
                 batch.update('transactions', {'status': 'synced'},
@@ -151,23 +178,64 @@ class BackgroundSyncService {
                   .forceCheckPendingTransactions();
               print(
                   'DEBUG: Bloque de ${chunk.length} ventas offline sincronizadas masivamente (RC173).');
+
+              scaffoldMessengerKey.currentState?.showSnackBar(
+                SnackBar(
+                  content: Text(
+                      '${chunk.length} Ventas offline sincronizadas (RC173)'),
+                  backgroundColor: Colors.green,
+                  duration: const Duration(seconds: 3),
+                ),
+              );
             } else {
+              String errorMsg = 'Código ${response.statusCode}';
+              if (response.data is Map && response.data.containsKey('errors')) {
+                errorMsg = response.data['errors'].toString();
+              } else if (response.data is Map &&
+                  response.data.containsKey('message')) {
+                errorMsg = response.data['message'].toString();
+              } else if (response.data != null) {
+                errorMsg = response.data.toString();
+              }
+
               print(
-                  'DEBUG: Fallo en bloque RC173, status ${response.statusCode}. Abortando siguientes bloques.');
+                  'DEBUG: Fallo en bloque RC173, status ${response.statusCode}. Msg: $errorMsg');
+
+              scaffoldMessengerKey.currentState?.showSnackBar(
+                SnackBar(
+                  content: Text('Error RC173: $errorMsg'),
+                  backgroundColor: Colors.red,
+                  duration: const Duration(seconds: 5),
+                ),
+              );
               break;
             }
           } catch (e) {
             String errorMessage = e.toString().split('\n').first;
             if (e is DioException && e.response != null) {
               final bodyData = e.response?.data;
-              if (bodyData is Map && bodyData.containsKey('message')) {
-                errorMessage = bodyData['message'].toString();
+              if (bodyData is Map) {
+                if (bodyData.containsKey('errors')) {
+                  errorMessage = bodyData['errors'].toString();
+                } else if (bodyData.containsKey('message')) {
+                  errorMessage = bodyData['message'].toString();
+                } else {
+                  errorMessage = bodyData.toString();
+                }
               } else if (bodyData != null) {
                 errorMessage = bodyData.toString();
               }
             }
             print(
                 'DEBUG: Fallo al sincronizar bloque RC173: $errorMessage. Abortando siguientes bloques.');
+
+            scaffoldMessengerKey.currentState?.showSnackBar(
+              SnackBar(
+                content: Text('Fallo RC173: $errorMessage'),
+                backgroundColor: Colors.red,
+                duration: const Duration(seconds: 5),
+              ),
+            );
             break;
           }
         }
@@ -235,9 +303,24 @@ class BackgroundSyncService {
           };
 
           try {
-            final response =
-                await _dio.post('/pos-transactions', data: payload);
-            if (response.statusCode == 200 || response.statusCode == 201) {
+            scaffoldMessengerKey.currentState?.showSnackBar(
+              const SnackBar(
+                content: Text('Enviando cierre de caja (RC172)...'),
+                backgroundColor: Colors.blueAccent,
+                duration: Duration(seconds: 2),
+              ),
+            );
+
+            final response = await _dio.post(
+              '/pos-transactions',
+              data: payload,
+              options: Options(
+                validateStatus: (status) => status != null && status < 500,
+              ),
+            );
+            if (response.statusCode == 200 ||
+                response.statusCode == 201 ||
+                response.statusCode == 409) {
               await db.update('transactions', {'status': 'synced'},
                   where: 'local_id = ?', whereArgs: [tx['local_id']]);
               _ref
@@ -245,15 +328,42 @@ class BackgroundSyncService {
                   .forceCheckPendingTransactions();
               print(
                   'DEBUG: Cierre offline sincronizado individualmente (RC172).');
+              scaffoldMessengerKey.currentState?.showSnackBar(
+                SnackBar(
+                  content: Text(response.statusCode == 409
+                      ? 'Cierre ya existía en servidor (RC172)'
+                      : 'Cierre offline sincronizado (RC172)'),
+                  backgroundColor:
+                      response.statusCode == 409 ? Colors.orange : Colors.green,
+                  duration: const Duration(seconds: 3),
+                ),
+              );
+            } else {
+              print(
+                  'DEBUG: Fallo al sincronizar Cierre de Caja (RC172) $txId: ${response.statusCode}');
+              scaffoldMessengerKey.currentState?.showSnackBar(
+                SnackBar(
+                  content: Text('Error RC172: Código ${response.statusCode}'),
+                  backgroundColor: Colors.red,
+                  duration: const Duration(seconds: 5),
+                ),
+              );
             }
           } catch (e) {
             print(
                 'DEBUG: Fallo al sincronizar Cierre de Caja (RC172) $txId: $e');
+            scaffoldMessengerKey.currentState?.showSnackBar(
+              SnackBar(
+                content: Text('Fallo RC172: $e'),
+                backgroundColor: Colors.red,
+                duration: const Duration(seconds: 5),
+              ),
+            );
           }
         }
       }
 
-      // Sincronizar Aperturas de Caja (RC171)
+      // Sincronizar Aperturas de Caja (RC174)
       for (final tx in pendingOpenings) {
         final txId = tx['id'];
         final txCashierId = tx['cashier_id'] ?? 1;
@@ -266,7 +376,7 @@ class BackgroundSyncService {
             : "Cajero";
 
         final payload = {
-          "type_code": "RC171",
+          "type_code": "RC174",
           "token": "",
           "dat": (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString(),
           "lat": tx['lat']?.toString() ?? "0.0",
@@ -274,27 +384,65 @@ class BackgroundSyncService {
           "hw": deviceInfo['hw'],
           "ime": deviceInfo['ime'],
           "employee_full_name": txEmployeeName,
-          "typ": "RC171",
+          "typ": "RC174",
           "ver": "1.0.0",
           if (posLocationId != null)
             "pos_location_id": posLocationId.toString(),
         };
 
         try {
-          final response =
-              await _dio.post('/pos-transactions', data: payload);
-          if (response.statusCode == 200 || response.statusCode == 201) {
+          final response = await _dio.post(
+            '/pos-transactions',
+            data: payload,
+            options: Options(
+              validateStatus: (status) =>
+                  status != null &&
+                  status < 500, // No arrojar excepción para 4xx (como 409)
+            ),
+          );
+          if (response.statusCode == 200 ||
+              response.statusCode == 201 ||
+              response.statusCode == 409) {
             await db.update('transactions', {'status': 'synced'},
-                where: 'local_id = ?', whereArgs: [tx['local_id']]);
+                where: 'id = ?', whereArgs: [txId]);
+            print(
+                'DEBUG: Apertura de Caja (RC174) sincronizada con éxito (o ya existía 409): $txId');
+
+            scaffoldMessengerKey.currentState?.showSnackBar(
+              SnackBar(
+                content: Text(response.statusCode == 409
+                    ? 'Caja ya estaba abierta en servidor (RC174)'
+                    : 'Apertura offline sincronizada (RC174)'),
+                backgroundColor:
+                    response.statusCode == 409 ? Colors.orange : Colors.green,
+                duration: const Duration(seconds: 3),
+              ),
+            );
             _ref
                 .read(systemStatusProvider.notifier)
                 .forceCheckPendingTransactions();
+          } else {
             print(
-                'DEBUG: Apertura offline sincronizada individualmente (RC171).');
+                'DEBUG: Error al sincronizar Apertura de Caja (RC174) $txId: ${response.statusCode}');
+            scaffoldMessengerKey.currentState?.showSnackBar(
+              SnackBar(
+                content: Text(
+                    'Error al enviar RC174: Código ${response.statusCode}'),
+                backgroundColor: Colors.red,
+                duration: const Duration(seconds: 5),
+              ),
+            );
           }
         } catch (e) {
           print(
-              'DEBUG: Fallo al sincronizar Apertura de Caja (RC171) $txId: $e');
+              'DEBUG: Fallo al sincronizar Apertura de Caja (RC174) $txId: $e');
+          scaffoldMessengerKey.currentState?.showSnackBar(
+            SnackBar(
+              content: Text('Fallo RC174: $e'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
+            ),
+          );
         }
       }
     } catch (e) {

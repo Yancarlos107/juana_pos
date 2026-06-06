@@ -384,7 +384,11 @@ class SalesHistoryNotifier extends StateNotifier<SalesHistoryState> {
         SELECT t.*, p.product_name 
         FROM transactions t
         LEFT JOIN products p ON t.product_id = p.id
-        WHERE t.created_at LIKE ? AND t.product_id != 'PMR' AND t.cashier_id = ?
+        WHERE t.created_at LIKE ? 
+          AND t.product_id != 'PMR' 
+          AND t.product_id != 'APERTURA DE CAJA'
+          AND t.product_id != 'CIERRE DE CAJA'
+          AND t.cashier_id = ?
         ORDER BY t.created_at DESC
         ''',
         ['$todayStr%', currentCashierId]
@@ -439,8 +443,8 @@ class SalesHistoryNotifier extends StateNotifier<SalesHistoryState> {
       final todayStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
 
       final data = await db.query('transactions', 
-        where: 'created_at LIKE ? AND (id LIKE ? OR amount LIKE ?)', 
-        whereArgs: ['$todayStr%', '%$query%', '%$query%'], 
+        where: 'created_at LIKE ? AND (id LIKE ? OR amount LIKE ?) AND product_id != ? AND product_id != ?', 
+        whereArgs: ['$todayStr%', '%$query%', '%$query%', 'APERTURA DE CAJA', 'CIERRE DE CAJA'], 
         orderBy: 'created_at DESC');
       
       List<Map<String, dynamic>> mappedData = data.map((tx) {
