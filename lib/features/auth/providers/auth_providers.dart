@@ -4,6 +4,7 @@ import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../services/session_service.dart';
 import '../../../core/database/database_helper.dart';
+import '../../../core/storage/local_storage_repository.dart';
 
 /// Proveedor del servicio de autenticación
 final authServiceProvider = Provider<AuthService>((ref) {
@@ -44,8 +45,9 @@ class AuthState {
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthService _authService;
   final SessionService _sessionService;
+  final LocalStorageRepository _storage;
 
-  AuthNotifier(this._authService, this._sessionService) : super(const AuthState());
+  AuthNotifier(this._authService, this._sessionService, this._storage) : super(const AuthState());
 
   /// Flujo completo: Login (ya trae datos de usuario) → Estado Autenticado
   Future<void> login(String email, String password) async {
@@ -80,20 +82,42 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> restoreOfflineUser() async {
     if (state.user != null) return;
     try {
-      final db = await DatabaseHelper.instance.database;
-      final results = await db.query('users', limit: 1);
-      if (results.isNotEmpty) {
-        final userRow = results.first;
-        final user = UserModel(
-          id: userRow['id'] as int? ?? 0,
-          name: userRow['name']?.toString() ?? 'Operador',
-          email: userRow['email']?.toString() ?? '01',
-          branchId: userRow['branch_id'] as int? ?? 0,
-          branchName: 'Sucursal',
-          initialBalance: 0.0,
-          roles: (userRow['roles']?.toString() ?? '').split(','),
-        );
-        state = state.copyWith(status: AuthStatus.authenticated, user: user);
+      final storage = _storage;
+      final cashierId = await storage.getActiveCashierId();
+      final cashierName = await storage.getActiveCashierName();
+
+      if (cashierId != null && cashierName != null) {
+        final db = await DatabaseHelper.instance.database;
+        final results = await db.query('users', where: 'id = ?', whereArgs: [cashierId], limit: 1);
+        
+        if (results.isNotEmpty) {
+          final userRow = results.first;
+          final user = UserModel(
+            id: cashierId,
+            name: cashierName,
+            email: userRow['email']?.toString() ?? '01',
+            branchId: userRow['branch_id'] as int? ?? 0,
+            branchName: 'Sucursal',
+            initialBalance: 0.0,
+            roles: (userRow['roles']?.toString() ?? '').split(','),
+          );
+          state = state.copyWith(status: AuthStatus.authenticated, user: user);
+        } else {
+          // Si por alguna razón el usuario no está en la base de datos pero sí en Storage, lo creamos con lo mínimo.
+          final user = UserModel(
+            id: cashierId,
+            name: cashierName,
+            email: '01',
+            branchId: await storage.getBranchId() ?? 0,
+            branchName: 'Sucursal',
+            initialBalance: 0.0,
+            roles: ['Cajero'],
+          );
+          state = state.copyWith(status: AuthStatus.authenticated, user: user);
+        }
+      } else {
+        // Fallback: Si no hay cajero guardado, cerramos sesión para obligar a login
+        state = state.copyWith(status: AuthStatus.unauthenticated, user: null);
       }
     } catch (e) {
       // Fallback silencioso
@@ -105,5 +129,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   final authService = ref.read(authServiceProvider);
   final sessionService = ref.read(sessionServiceProvider);
-  return AuthNotifier(authService, sessionService);
+  final storage = ref.read(localStorageProvider);
+  return AuthNotifier(authService, sessionService, storage);
 });

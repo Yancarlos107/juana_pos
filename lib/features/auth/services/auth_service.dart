@@ -48,6 +48,7 @@ class AuthService {
       await _storage.saveBranchId(user.branchId);
       await _storage.saveRoles(user.roles);
       await _storage.saveBalance(user.initialBalance);
+      await _storage.saveActiveCashier(user.id, user.name);
 
       // Guardamos en SQLite para permitir el login offline futuro
       final db = await DatabaseHelper.instance.database;
@@ -66,11 +67,12 @@ class AuthService {
 
       return user;
     } on DioException catch (e) {
-      // Detección de fallo de red para fallback offline
+      // Detección de fallo de red (o redirección 302 de la SIM) para fallback offline
       if (e.type == DioExceptionType.connectionTimeout || 
           e.type == DioExceptionType.receiveTimeout || 
           e.type == DioExceptionType.connectionError ||
-          e.type == DioExceptionType.unknown) {
+          e.type == DioExceptionType.unknown ||
+          (e.type == DioExceptionType.badResponse && e.response?.statusCode == 302)) {
         return _offlineLogin(phoneOrEmail, password);
       }
 
@@ -120,6 +122,7 @@ class AuthService {
     await _storage.saveBranchId(user.branchId);
     await _storage.saveRoles(user.roles);
     await _storage.saveBalance(user.initialBalance);
+    await _storage.saveActiveCashier(user.id, user.name);
 
     return user;
   }
@@ -137,6 +140,7 @@ class AuthService {
       await _storage.saveBranchId(user.branchId);
       await _storage.saveRoles(user.roles);
       await _storage.saveBalance(user.initialBalance);
+      await _storage.saveActiveCashier(user.id, user.name);
 
       return user;
     } on DioException catch (e) {

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,26 +16,21 @@ class LocalStorageRepository {
   static const String _userRolesKey = 'user_roles';
   static const String _balanceKey = 'branch_balance';
   static const String _deviceHashKey = 'device_hash_cache';
+  static const String _activeCashierIdKey = 'active_cashier_id';
+  static const String _activeCashierNameKey = 'active_cashier_name';
 
   Future<String> getDeviceHash() async {
     final prefs = await SharedPreferences.getInstance();
     String? hash = prefs.getString(_deviceHashKey);
-    if (hash != null) return hash;
+    // Si ya existe y tiene exactamente 3 letras, lo usamos. 
+    // Si no (ej. el antiguo "MT" o nulo), generamos uno nuevo.
+    if (hash != null && hash.length == 3) return hash;
 
-    final DeviceInfoPlugin deviceInfoPlugin = DeviceInfoPlugin();
-    String deviceId = "UNKNOWN";
-    try {
-      if (Platform.isAndroid) {
-        deviceId = (await deviceInfoPlugin.androidInfo).id;
-      } else if (Platform.isIOS) {
-        deviceId = (await deviceInfoPlugin.iosInfo).identifierForVendor ?? "UNKNOWN";
-      }
-    } catch (_) {}
-
-    final int hashNum = deviceId.hashCode.abs();
-    final char1 = String.fromCharCode(65 + (hashNum % 26));
-    final char2 = String.fromCharCode(65 + ((hashNum ~/ 26) % 26));
-    hash = '$char1$char2';
+    final random = Random();
+    final char1 = String.fromCharCode(65 + random.nextInt(26));
+    final char2 = String.fromCharCode(65 + random.nextInt(26));
+    final char3 = String.fromCharCode(65 + random.nextInt(26));
+    hash = '$char1$char2$char3';
     
     await prefs.setString(_deviceHashKey, hash);
     return hash;
@@ -55,6 +51,22 @@ class LocalStorageRepository {
   }
 
   // ================= Manejo de Datos de Usuario =================
+
+  Future<void> saveActiveCashier(int id, String name) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_activeCashierIdKey, id);
+    await prefs.setString(_activeCashierNameKey, name);
+  }
+
+  Future<int?> getActiveCashierId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_activeCashierIdKey);
+  }
+
+  Future<String?> getActiveCashierName() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_activeCashierNameKey);
+  }
 
   Future<void> saveBranchId(int branchId) async {
     final prefs = await SharedPreferences.getInstance();
@@ -94,6 +106,22 @@ class LocalStorageRepository {
   Future<String?> getPosLocationName() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('active_pos_location_name');
+  }
+
+  Future<void> saveGpsLocation(double lat, double lon) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('active_lat', lat);
+    await prefs.setDouble('active_lon', lon);
+  }
+
+  Future<Map<String, double>?> getGpsLocation() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lat = prefs.getDouble('active_lat');
+    final lon = prefs.getDouble('active_lon');
+    if (lat != null && lon != null) {
+      return {'lat': lat, 'lon': lon};
+    }
+    return null;
   }
 
   static const String _locationsListKey = 'cached_locations';
@@ -140,14 +168,17 @@ class LocalStorageRepository {
 
   /// Limpia toda la sesión (al hacer logout)
   Future<void> clearAll() async {
-    await _secureStorage.deleteAll();
+    await deleteToken();
     final prefs = await SharedPreferences.getInstance();
-    
-    // Borramos datos de sesión activa, conservando cachés para uso offline futuro
     await prefs.remove(_branchIdKey);
     await prefs.remove(_userRolesKey);
+    await prefs.remove(_balanceKey);
+    await prefs.remove(_activeCashierIdKey);
+    await prefs.remove(_activeCashierNameKey);
     await prefs.remove('active_pos_location_id');
     await prefs.remove('active_pos_location_name');
+    await prefs.remove('active_lat');
+    await prefs.remove('active_lon');
   }
 
   // ================= Manejo de Ventas Locales (Recaudo) =================

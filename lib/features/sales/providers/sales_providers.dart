@@ -232,13 +232,16 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
 
       final currentBalance = await _storage.getBalance();
       
-      // Permitir la venta si hay saldo suficiente O si la máquina está offline
+      // Permitir la venta sin validación de saldo por requerimiento del PM
+      /*
       if (currentBalance < product.value && !isOffline) {
         throw Exception('Saldo insuficiente. Saldo actual: \$${CurrencyFormatter.format(currentBalance)}. Requerido: \$${CurrencyFormatter.format(product.value)}');
       }
+      */
 
       // Se fuerza SIEMPRE la generación offline
-      final localId = "OFF-${DateTime.now().microsecondsSinceEpoch}";
+      final posLocationId = await _storage.getPosLocationId();
+      final localId = "OFF-${DateTime.now().microsecondsSinceEpoch}-$posLocationId";
       
       final chars = 'abcdef0123456789';
       final random = Random();
@@ -246,9 +249,9 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
           32, (_) => chars.codeUnitAt(random.nextInt(chars.length))));
 
       
-      // 2. Decrementar saldo local tras éxito
-      final newBalance = currentBalance - product.value;
-      await _storage.saveBalance(newBalance);
+      // 2. Decrementar saldo local tras éxito (DESHABILITADO POR PM)
+      final newBalance = currentBalance; // El saldo no se reduce
+      // await _storage.saveBalance(newBalance);
 
       // 3. Guardamos la venta en SQLite
       final db = await DatabaseHelper.instance.database;
@@ -256,11 +259,15 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
       final branchId = await _storage.getBranchId() ?? 0;
       final sessionQuery = await db.query('sessions', where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
       final sessionId = sessionQuery.isNotEmpty ? sessionQuery.first['id'] : null;
+      
+      // Obtener GPS cacheado
+      final gpsData = await _storage.getGpsLocation();
 
       final insertedLocalId = await db.insert('transactions', {
         'id': localId,
         'session_id': sessionId,
         'cashier_id': cashierId, // <- USAMOS EL CASHIER QUE ESTA LOGUEADO REALMENTE
+        'pos_location_id': posLocationId,
         'product_id': product.id,
         'amount': product.value,
         'pmr': product.pmr ? 1 : 0,
@@ -268,6 +275,8 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
         'created_at': DateTime.now().toIso8601String(),
         'qr_data': qrCodeStr,
         'print_status': 0, // Inicia en 0, la UI lo actualizará a 1 si imprime
+        'lat': gpsData?['lat'],
+        'lon': gpsData?['lon'],
       });
 
       final result = QrPurchaseResult(
@@ -366,6 +375,8 @@ class SalesHistoryNotifier extends StateNotifier<SalesHistoryState> {
       final now = DateTime.now();
       final todayStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
 
+      final currentCashierId = await _storage.getActiveCashierId();
+
       // Buscar por fecha para no borrar de la vista las que ya se cerraron hoy,
       // pero excluir las aperturas PMR de la vista de historial.
       final data = await db.rawQuery(
@@ -373,16 +384,17 @@ class SalesHistoryNotifier extends StateNotifier<SalesHistoryState> {
         SELECT t.*, p.product_name 
         FROM transactions t
         LEFT JOIN products p ON t.product_id = p.id
-        WHERE t.created_at LIKE ? AND t.product_id != 'PMR'
+        WHERE t.created_at LIKE ? AND t.product_id != 'PMR' AND t.cashier_id = ?
         ORDER BY t.created_at DESC
         ''',
-        ['$todayStr%']
+        ['$todayStr%', currentCashierId]
       );
       
-      // Mapear con un flag 'is_closed'
+      // Mapear el flag 'is_closed' desde la base de datos (0 o 1)
       List<Map<String, dynamic>> mappedData = data.map((tx) {
          final map = Map<String, dynamic>.from(tx);
-         map['is_closed'] = tx['session_id'] != openSessionId;
+         // tx['is_closed'] ahora viene de la BD como entero, 1 es cerrado
+         map['is_closed'] = (tx['is_closed'] == 1);
          return map;
       }).toList();
       

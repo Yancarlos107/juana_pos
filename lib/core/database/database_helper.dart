@@ -5,7 +5,7 @@ import 'package:path_provider/path_provider.dart';
 
 class DatabaseHelper {
   static const _databaseName = "JuanaPos.db";
-  static const _databaseVersion = 5;
+  static const _databaseVersion = 10;
 
   // Singleton class
   DatabaseHelper._privateConstructor();
@@ -70,6 +70,41 @@ class DatabaseHelper {
       await db.execute(
           'ALTER TABLE transactions ADD COLUMN cashier_id INTEGER DEFAULT 1');
     }
+    if (oldVersion < 6) {
+      // Migración v5 → v6: Add pos_location_id column to transactions
+      await db.execute(
+          'ALTER TABLE transactions ADD COLUMN pos_location_id INTEGER');
+    }
+    if (oldVersion < 7) {
+      // Migración v6 → v7: Add is_closed column to transactions for per-cashier closures
+      await db.execute(
+          'ALTER TABLE transactions ADD COLUMN is_closed INTEGER DEFAULT 0');
+    }
+    if (oldVersion < 8) {
+      // Migración v7 → v8: Limpieza de ventas "zombies". 
+      // Al crear la columna is_closed en v7, TODAS las ventas antiguas quedaron en 0 (abiertas).
+      // Aquí marcamos como cerradas todas las ventas excepto las hechas hoy mismo
+      // (o simplemente marcamos todas las pendientes que no pertenezcan a la sesión abierta actual)
+      await db.execute('''
+        UPDATE transactions 
+        SET is_closed = 1 
+        WHERE session_id IN (SELECT id FROM sessions WHERE status = 'closed') 
+        AND product_id != 'CIERRE DE CAJA'
+      ''');
+    }
+    if (oldVersion < 9) {
+      // Migración v8 → v9: Asegurar que los CIERRE DE CAJA tengan is_closed = 1
+      await db.execute('''
+        UPDATE transactions 
+        SET is_closed = 1 
+        WHERE product_id = 'CIERRE DE CAJA'
+      ''');
+    }
+    if (oldVersion < 10) {
+      // Migración v9 → v10: Add lat and lon columns for GPS tracking
+      await db.execute('ALTER TABLE transactions ADD COLUMN lat REAL');
+      await db.execute('ALTER TABLE transactions ADD COLUMN lon REAL');
+    }
   }
 
   Future _onCreate(Database db, int version) async {
@@ -118,7 +153,11 @@ class DatabaseHelper {
         created_at TEXT NOT NULL,
         qr_data TEXT,
         print_status INTEGER DEFAULT 0,
-        cashier_id INTEGER DEFAULT 1
+        cashier_id INTEGER DEFAULT 1,
+        pos_location_id INTEGER,
+        is_closed INTEGER DEFAULT 0,
+        lat REAL,
+        lon REAL
       )
     ''');
 

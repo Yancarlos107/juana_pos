@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 import '../providers/auth_providers.dart';
 import '../../printer/services/printer_service.dart';
 import '../../../core/storage/local_storage_repository.dart';
@@ -29,11 +31,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   TextEditingController? _activeController;
   bool _obscurePassword = true;
+  bool _hasUnclosedSales = false;
 
   @override
   void initState() {
     super.initState();
     _activeController = _emailController;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkUnclosedSales();
+    });
     _userFocusNode.addListener(() {
       if (_userFocusNode.hasFocus) {
         setState(() => _activeController = _emailController);
@@ -55,6 +61,105 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
+  Future<void> _checkUnclosedSales() async {
+    try {
+      final db = await DatabaseHelper.instance.database;
+      final result = await db.query(
+        'transactions',
+        where: 'is_closed = 0 AND product_id != ?',
+        whereArgs: ['CIERRE DE CAJA'],
+        limit: 1,
+      );
+      if (mounted) {
+        setState(() {
+          _hasUnclosedSales = result.isNotEmpty;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _showPendingSalesModal() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator(color: Color(0xFF6642F8))),
+    );
+    
+    try {
+      final db = await DatabaseHelper.instance.database;
+      final result = await db.rawQuery('''
+        SELECT 
+          u.name, 
+          COUNT(t.local_id) as pending_count, 
+          SUM(t.amount) as pending_amount
+        FROM transactions t
+        LEFT JOIN users u ON t.cashier_id = u.id
+        WHERE t.is_closed = 0 AND t.product_id != 'CIERRE DE CAJA'
+        GROUP BY t.cashier_id
+        HAVING pending_count > 0
+      ''');
+      
+      if (mounted) Navigator.pop(context); // quitar loader
+      
+      if (result.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('La caja está limpia. Ningún usuario tiene ventas pendientes de cierre.'),
+            backgroundColor: Colors.green,
+          ));
+        }
+        return;
+      }
+      
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Row(
+              children: [
+                Icon(Icons.account_balance_wallet_rounded, color: Colors.orange, size: 28),
+                SizedBox(width: 12),
+                Text('Ventas Pendientes por Usuario', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+              ],
+            ),
+            content: SizedBox(
+              width: 450,
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: result.length,
+                separatorBuilder: (_, __) => const Divider(),
+                itemBuilder: (ctx, i) {
+                  final row = result[i];
+                  final name = row['name']?.toString() ?? 'Cajero Desconocido';
+                  final count = row['pending_count'] as int? ?? 0;
+                  final amount = (row['pending_amount'] as num?)?.toDouble() ?? 0;
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF3F3D56))),
+                    subtitle: Text('Ventas sin cerrar: $count'),
+                    trailing: Text('\$${amount.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}', 
+                      style: const TextStyle(color: Color(0xFF6642F8), fontWeight: FontWeight.bold, fontSize: 18)),
+                  );
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('ENTENDIDO', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+    }
+  }
+
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
     await ref.read(authProvider.notifier).login(
@@ -65,15 +170,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final authState = ref.read(authProvider);
     // Si llegamos aquí sin excepción, solicitamos el Punto de Venta
     if (mounted && authState.status == AuthStatus.authenticated) {
-      // 1. Abrimos la caja en el servidor (RC171)
+      // 1. (Eliminado: Petición directa al servidor RC171 para evitar duplicidad, ahora se encola abajo)
+
+      // 2. Capturar y guardar GPS (Solo se pide una vez al iniciar sesión)
       try {
-        final closureService = ref.read(closureServiceProvider);
-        await closureService.openRegister(authState.user!.name);
+        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (serviceEnabled) {
+          LocationPermission permission = await Geolocator.checkPermission();
+          if (permission == LocationPermission.denied) {
+            permission = await Geolocator.requestPermission();
+          }
+          if (permission == LocationPermission.whileInUse || permission == LocationPermission.always) {
+            Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium);
+            await ref.read(localStorageProvider).saveGpsLocation(position.latitude, position.longitude);
+            print('DEBUG: GPS capturado en login: ${position.latitude}, ${position.longitude}');
+          }
+        }
       } catch (e) {
-        print('Advertencia: No se pudo abrir la caja en el backend: $e');
+        print('DEBUG: Error capturando GPS en login: $e');
       }
 
-      // 2. Pedimos punto de venta (UI)
+      // 3. Pedimos punto de venta (UI)
       final success = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
@@ -82,6 +199,33 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
       if (mounted) {
         if (success == true) {
+          // 4. Guardamos la transacción offline de Apertura de Caja para que se sincronice en la RC171
+          try {
+            final db = await DatabaseHelper.instance.database;
+            final posLocationId = await ref.read(localStorageProvider).getPosLocationId();
+            final gpsData = await ref.read(localStorageProvider).getGpsLocation();
+            final cashierId = authState.user?.id ?? 1;
+            
+            await db.insert('transactions', {
+              'id': 'open-${DateTime.now().microsecondsSinceEpoch}-$posLocationId',
+              'session_id': null,
+              'cashier_id': cashierId,
+              'pos_location_id': posLocationId,
+              'product_id': 'APERTURA DE CAJA',
+              'amount': 0.0,
+              'pmr': 0,
+              'status': 'pending',
+              'created_at': DateTime.now().toIso8601String(),
+              'qr_data': '', // Token vacío
+              'print_status': 0,
+              'lat': gpsData?['lat'],
+              'lon': gpsData?['lon'],
+            });
+            print('DEBUG: Transacción de APERTURA DE CAJA guardada localmente para desencole (RC171).');
+          } catch (e) {
+            print('DEBUG: Error al guardar APERTURA DE CAJA: $e');
+          }
+
           Navigator.pushReplacementNamed(context, '/dashboard');
         } else {
           // Si el usuario cancela, cerramos la sesión parcial
@@ -242,9 +386,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final db = await DatabaseHelper.instance.database;
       final txs = await db.query('transactions');
       
-      final appDir = await getApplicationDocumentsDirectory();
-      final basePath = appDir.path;
-      final file = File('$basePath/tramas_exportadas.txt');
+      // Intentar guardar en la carpeta de Descargas pública de Android
+      String basePath = '/storage/emulated/0/Download';
+      File file = File('$basePath/tramas_exportadas.txt');
+      
+      try {
+        // Intentar escribir al archivo para probar permisos
+        if (!await file.exists()) {
+          await file.create(recursive: true);
+        }
+      } catch (e) {
+        // Fallback a la carpeta de la app si hay error de permisos
+        final appDir = await getApplicationDocumentsDirectory();
+        basePath = appDir.path;
+        file = File('$basePath/tramas_exportadas.txt');
+      }
       
       final sb = StringBuffer();
       sb.writeln('=== EXPORTACIÓN DE TRAMAS ===');
@@ -491,6 +647,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         elevation: 0,
         surfaceTintColor: Colors.white,
         actions: [
+          IconButton(
+            onPressed: _showPendingSalesModal,
+            tooltip: _hasUnclosedSales 
+                ? 'Ver ventas pendientes de cierre' 
+                : 'No hay ventas pendientes',
+            icon: Icon(
+              Icons.account_balance_wallet_rounded,
+              color: _hasUnclosedSales ? Colors.redAccent : Colors.green,
+              size: 40,
+            ),
+          ),
+          const SizedBox(width: 16),
           Icon(Icons.accessible_rounded,
               color: systemStatus.isPmrConnected ? Colors.green : Colors.redAccent,
               size: 40),

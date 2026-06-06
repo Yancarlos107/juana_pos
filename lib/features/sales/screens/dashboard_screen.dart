@@ -169,7 +169,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
             final localId = result.rawData['local_id'] as int? ?? 0;
             final deviceHash = await storage.getDeviceHash();
-            final serialNumber = '$deviceHash-${localId.toString().padLeft(7, '0')}';
+            final posLocationId = await storage.getPosLocationId();
+            final serialNumber = '$deviceHash-${localId.toString().padLeft(7, '0')}-$posLocationId';
 
             final db = await DatabaseHelper.instance.database;
             final userRows = await db.query('users', limit: 1);
@@ -182,6 +183,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   qrData: result.qrCode,
                   cashierName: cashierName,
                   cashierCode: cashierCode,
+                  posLocationId: posLocationId,
                   branchName: branchName,
                   productName: '${product.productName}$pmrLabel',
                 );
@@ -385,25 +387,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 children: [
                   Row(
                     children: [
-                      if (balanceState.status == BalanceStatus.loading)
-                        const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2))
-                      else if (balanceState.status == BalanceStatus.error)
-                        const Text('Error',
-                            style: TextStyle(fontSize: 14, color: Colors.redAccent))
-                      else
-                        Text(
-                          '\$ ${_formatCurrency(balanceState.balance)}',
-                          style: const TextStyle(
-                              fontSize: 26,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF3F3D56)),
-                        ),
-                      const SizedBox(width: 16),
-                      Container(width: 2, height: 24, color: Colors.grey.shade300),
-                      const SizedBox(width: 16),
                       Expanded(
                         child: Text(
                           '$_posName - ${authState.user?.name ?? 'Taquillero'}',
@@ -1056,10 +1039,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final sessionQuery = await db.query('sessions',
         where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
     final sessionId = sessionQuery.isNotEmpty ? sessionQuery.first['id'] : null;
+    final posLocationId = await ref.read(localStorageProvider).getPosLocationId();
+    final cashierId = ref.read(authProvider).user?.id ?? 1;
 
     await db.insert('transactions', {
       'id': 'PMR-${DateTime.now().millisecondsSinceEpoch}',
       'session_id': sessionId,
+      'cashier_id': cashierId,
+      'pos_location_id': posLocationId,
       'product_id': 'PMR',
       'amount': 0,
       'pmr': 1,
@@ -1150,7 +1137,7 @@ class __ClockWidgetState extends State<_ClockWidget> {
         '${_now.hour.toString().padLeft(2, '0')}:${_now.minute.toString().padLeft(2, '0')}';
     return Text('$dateStr $timeStr',
         style: const TextStyle(
-            fontSize: 16,
+            fontSize: 24, // Aumentado de 16 a 24
             color: Color(0xFF6642F8),
             fontWeight: FontWeight.bold));
   }

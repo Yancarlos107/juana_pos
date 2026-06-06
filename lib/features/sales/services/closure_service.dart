@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:io';
+import 'package:device_info_plus/device_info_plus.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/storage/local_storage_repository.dart';
@@ -17,11 +19,32 @@ class ClosureService {
 
   ClosureService(this._dio, this._storage);
 
+  Future<Map<String, String>> _getDeviceInfo() async {
+    final DeviceInfoPlugin deviceInfoPlugin = DeviceInfoPlugin();
+    String hw = "UNKNOWN";
+    String ime = "UNKNOWN";
+    try {
+      if (Platform.isAndroid) {
+        final build = await deviceInfoPlugin.androidInfo;
+        hw = build.model; 
+        ime = build.id;   
+      } else if (Platform.isIOS) {
+        final data = await deviceInfoPlugin.iosInfo;
+        hw = data.model;
+        ime = data.identifierForVendor ?? "UNKNOWN";
+      }
+    } catch (_) {}
+    return {"hw": hw, "ime": ime};
+  }
+
   /// Realiza la Apertura de Caja (RC171) en el backend
   Future<void> openRegister(String cashierName) async {
     try {
       final token = await _storage.getToken();
       if (token == null) return;
+      
+      final deviceInfo = await _getDeviceInfo();
+      final posLocationId = await _storage.getPosLocationId();
 
       await _dio.post(
         '/pos-transactions',
@@ -31,11 +54,12 @@ class ClosureService {
           "dat": (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString(),
           "lat": "0.0",
           "lon": "0.0",
-          "hw": "POS_FLUTTER",
-          "ime": "IMEI_DEFAULT",
+          "hw": deviceInfo['hw'],
+          "ime": deviceInfo['ime'],
           "employee_full_name": cashierName,
           "typ": "RC171",
-          "ver": "1.0.0"
+          "ver": "1.0.0",
+          if (posLocationId != null) "pos_location_id": posLocationId,
         },
         options: Options(
           headers: {
@@ -94,6 +118,9 @@ class ClosureService {
 
       final csvTokens = hexTokens.join(',');
       
+      final deviceInfo = await _getDeviceInfo();
+      final posLocationId = await _storage.getPosLocationId();
+
       // Enviamos el RC172
       final response = await _dio.post(
         '/pos-transactions',
@@ -103,11 +130,12 @@ class ClosureService {
           "dat": (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString(),
           "lat": "0.0",
           "lon": "0.0",
-          "hw": "POS_FLUTTER",
-          "ime": "IMEI_DEFAULT",
+          "hw": deviceInfo['hw'],
+          "ime": deviceInfo['ime'],
           "employee_full_name": cashierName,
           "typ": "RC172",
-          "ver": "1.0.0"
+          "ver": "1.0.0",
+          if (posLocationId != null) "pos_location_id": posLocationId,
         },
         options: Options(
           headers: {
@@ -138,6 +166,7 @@ class ClosureService {
         await db.insert('transactions', {
           'id': 'CIERRE-${DateTime.now().millisecondsSinceEpoch}',
           'session_id': sessionId,
+          'pos_location_id': posLocationId,
           'product_id': 'CIERRE DE CAJA',
           'amount': totalAmount,
           'pmr': 0,

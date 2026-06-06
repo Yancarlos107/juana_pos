@@ -85,7 +85,8 @@ class InitService {
       if (e.type == DioExceptionType.connectionTimeout || 
           e.type == DioExceptionType.receiveTimeout || 
           e.type == DioExceptionType.connectionError ||
-          e.type == DioExceptionType.unknown) {
+          e.type == DioExceptionType.unknown ||
+          (e.type == DioExceptionType.badResponse && e.response?.statusCode == 302)) {
         
         // Intento offline
         final cachedLocations = await _storage.getPosLocationsList();
@@ -147,7 +148,8 @@ class InitService {
       if (e.type == DioExceptionType.connectionTimeout || 
           e.type == DioExceptionType.receiveTimeout || 
           e.type == DioExceptionType.connectionError ||
-          e.type == DioExceptionType.unknown) {
+          e.type == DioExceptionType.unknown ||
+          (e.type == DioExceptionType.badResponse && e.response?.statusCode == 302)) {
         // Offline: Permitimos avanzar usando el punto de venta guardado localmente
         return;
       }

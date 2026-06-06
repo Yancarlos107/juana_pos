@@ -81,6 +81,9 @@ class SystemStatusNotifier extends StateNotifier<SystemStatus> {
       return isOnline;
     } catch (e) {
       if (e is DioException && e.response != null) {
+        if (e.response?.statusCode == 302) {
+          return false; // Redirección de la SIM (Captive Portal)
+        }
         _syncService.syncPendingData();
         return true;
       }

@@ -209,8 +209,9 @@ class PrinterService {
     required String transactionId,
     required double amount,
     required String qrData,
-    required String cashierName,
-    required String cashierCode,
+    required String cashierName, // Lo mantenemos por si el código externo lo envía, pero no lo imprimimos
+    required String cashierCode, // Ídem
+    int? posLocationId,
     String? branchName,
     String? productName,
     bool isReprint = false,
@@ -242,9 +243,8 @@ class PrinterService {
       bytes.addAll(_text('Corredor Central Norte\n'));
 
       if (branchName != null && branchName.trim().isNotEmpty) {
-        bytes.addAll(_text('$cashierName - ${branchName.trim().toUpperCase()}\n'));
+        bytes.addAll(_text('Estacion: ${branchName.trim().toUpperCase()} (ID: ${posLocationId ?? 0})\n'));
       }
-      bytes.addAll(_text('Código: $cashierCode\n'));
 
       if (isReprint) {
         bytes.addAll(_text('*** REIMPRESIÓN ***\n'));
@@ -299,6 +299,7 @@ class PrinterService {
     required double totalAmount,
     required String startTime,
     required String endTime,
+    int? posLocationId,
     String? qrData,
     List<String>? breakdown,
     int pmrCount = 0,
@@ -322,7 +323,7 @@ class PrinterService {
       bytes.addAll(_text('CIERRE DE CAJA\n'));
       bytes.addAll([0x1D, 0x21, 0x00]); // Normal
       bytes.addAll([0x1B, 0x45, 0x00]);
-      bytes.addAll(_text('$branchName\n\n'));
+      bytes.addAll(_text('Estacion: $branchName (ID: ${posLocationId ?? 0})\n\n'));
       bytes.addAll([0x1B, 0x61, 0x00]); // Left
       bytes.addAll(_text('Cajero: $cashierName\n'));
       bytes.addAll(_text('Código: $cashierId\n'));

@@ -47,8 +47,13 @@ class ClosingHelper {
       return;
     }
 
+    final currentCashierId = ref.read(authProvider).user?.id ?? 1;
     final sessionId = sessionQuery.first['id'] as int;
-    final unclosedSales = await db.query('transactions', where: 'session_id = ?', whereArgs: [sessionId]);
+    final unclosedSales = await db.query(
+      'transactions', 
+      where: 'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id != ?', 
+      whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA']
+    );
 
     if (unclosedSales.isEmpty) {
       if (isLogout) {
@@ -298,7 +303,12 @@ class ClosingHelper {
     }
 
     final sessionId = sessionRows.first['id'] as int;
-    final unclosedSales = await db.query('transactions', where: 'session_id = ?', whereArgs: [sessionId]);
+    final currentCashierId = ref.read(authProvider).user?.id ?? 1;
+    final unclosedSales = await db.query(
+      'transactions', 
+      where: 'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id != ?', 
+      whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA']
+    );
 
     if (unclosedSales.isEmpty) {
       if (isLogout) _executeLogout(context, ref);
@@ -390,12 +400,14 @@ class ClosingHelper {
         barrierDismissible: false,
         builder: (ctx) => const Center(child: CircularProgressIndicator()));
 
-    final currentCashierId = ref.read(authProvider).user?.id ?? 1;
+    final posLocationId = await ref.read(localStorageProvider).getPosLocationId();
+
     final printer = ref.read(printerServiceProvider);
     final printResult = await printer.printClosingTicket(
       cashierName: cashierName,
       cashierId: currentCashierId.toString(),
       branchName: branchName,
+      posLocationId: posLocationId,
       totalTransactions: unclosedSales.length - pmrCount,
       totalAmount: totalAmount,
       startTime: startTimeLabel,
@@ -426,6 +438,7 @@ class ClosingHelper {
         'id': 'closure-${now.millisecondsSinceEpoch}',
         'session_id': currentSessionId,
         'cashier_id': currentCashierId,
+        'pos_location_id': posLocationId,
         'product_id': 'CIERRE DE CAJA',
         'amount': totalAmount,
         'pmr': 0,
@@ -433,10 +446,17 @@ class ClosingHelper {
         'created_at': now.toIso8601String(),
         'qr_data': qrData,
         'print_status': printSuccess ? 1 : 0,
+        'is_closed': 1, // EL CIERRE DE CAJA YA NACE CERRADO
       });
 
-      await ref.read(sessionServiceProvider).closeSession(branchId);
-
+      // Marcar las ventas cerradas por este cajero como cerradas
+      await db.update(
+        'transactions',
+        {'is_closed': 1},
+        where: 'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id != ?',
+        whereArgs: [currentSessionId, currentCashierId, 'CIERRE DE CAJA'],
+      );
+      // Ya no cerramos la sesión global, permitiendo a otros cajeros cerrar sus propias ventas después
       if (isLogout) {
         _executeLogout(context, ref);
       } else {

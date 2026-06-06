@@ -334,12 +334,15 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
           : ref.read(authProvider).user?.email ?? '01';
       final cashierCode = emailString.split('@').first;
 
+      final posLocationId = sale['pos_location_id'] as int?;
+
       printResult = await printer.printTicket(
         transactionId: serialNumber,
         amount: amount,
         qrData: qrData,
         cashierName: cashierName,
         cashierCode: cashierCode,
+        posLocationId: posLocationId,
         branchName: branchName,
         productName: prod.productName,
         isReprint: isReprint,
