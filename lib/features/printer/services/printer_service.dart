@@ -1,163 +1,65 @@
-import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/services.dart';
-import '../../auth/providers/auth_providers.dart';
-import '../../../core/utils/currency_formatter.dart';
-import 'package:flutter_thermal_printer/flutter_thermal_printer.dart';
-import 'package:flutter_thermal_printer/utils/printer.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/utils/currency_formatter.dart';
 import 'epson_epos_service.dart';
 
-/// Servicio de impresión térmica POS vía USB.
-/// Detecta automáticamente si hay una impresora Epson (vendor 0x04B8) y usa
-/// USB Host API directo. Para otras impresoras usa flutter_thermal_printer.
+/// Servicio de impresión térmica POS vía USB Host API.
+///
+/// Toda la impresión sale por el canal nativo (MainActivity.kt), que localiza
+/// la impresora externa por fabricante soportado (Epson VID 1208 / 0x04B8).
+/// La detección de conexión consulta la lista USB real del sistema en cada
+/// chequeo, por lo que desconectar el cable se refleja de inmediato y nunca
+/// queda un estado "fantasma".
 class PrinterService {
-  final FlutterThermalPrinter _printer = FlutterThermalPrinter.instance;
   final EpsonEposService _epsonService = EpsonEposService();
-  Printer? _connectedPrinter;
-  static const _platform = MethodChannel('co.Juana.usb/status');
+  static const _statusChannel = MethodChannel('co.Juana.usb/status');
+  static const _eventsChannel = EventChannel('co.Juana.usb/events');
 
-  int? _lastVendorId;
-  int? _lastProductId;
+  Stream<String>? _usbEvents;
 
-  Future<bool> checkHardwareConnection() async {
-    try {
-      /*
-      // INTENTO DE FIX (Retirado temporalmente): 
-      // 1208 (0x04B8) es Epson. Usamos Epson por defecto para evitar hacer match 
-      // con la impresora interna de la tablet (clase 7) cuando _lastVendorId es null en el arranque.
-      final bool isConnected =
-          await _platform.invokeMethod('isUsbDeviceConnected', {
-        'vendorId': _lastVendorId ?? 1208, 
-        'productId': _lastProductId ?? -1,
-      });
-      return isConnected;
-      */
-
-      // Lógica original (Con el problema de caché de la tablet interna)
-      final bool isConnected =
-          await _platform.invokeMethod('isUsbDeviceConnected', {
-        'vendorId': _lastVendorId ?? -1,
-        'productId': _lastProductId ?? -1,
-      });
-      return isConnected;
-    } catch (e) {
-      print('DEBUG: Error native check: $e');
-      return false; // NUNCA asumir true si hay error, para no ocultar la desconexión
-    }
+  /// Eventos nativos de conexión/desconexión USB: emite "attached"/"detached"
+  /// en el instante en que se conecta o desconecta cualquier dispositivo USB.
+  Stream<String> get usbEvents {
+    _usbEvents ??= _eventsChannel
+        .receiveBroadcastStream()
+        .map((event) => event.toString())
+        .asBroadcastStream();
+    return _usbEvents!;
   }
 
-  // Vendor ID 1208 = 0x04B8 = Seiko Epson Corp.
-  Future<bool> _isEpsonConnected() async {
+  /// true solo si hay una impresora externa soportada físicamente conectada.
+  /// El filtrado por fabricante ocurre en nativo (SUPPORTED_VENDOR_IDS): no se
+  /// acepta cualquier dispositivo clase 7 porque la impresora interna de la
+  /// tablet es clase 7 y daba falsos positivos al desconectar la Epson.
+  Future<bool> isPrinterAvailable() async {
     try {
-      return await _platform.invokeMethod('isUsbDeviceConnected', {
-        'vendorId': 1208,
+      final bool connected =
+          await _statusChannel.invokeMethod('isUsbDeviceConnected', {
+        'vendorId': -1,
         'productId': -1,
       });
-    } catch (_) {
+      return connected;
+    } catch (e) {
+      print('DEBUG: Error consultando estado USB: $e');
+      return false; // NUNCA asumir conectada si el canal falla
+    }
+  }
+
+  Future<bool> pingPrinter() => isPrinterAvailable();
+
+  /// Verifica conexión física y envía los bytes por USB Host API.
+  /// null = permiso USB pendiente, true/false = éxito/fallo.
+  Future<bool?> _send(List<int> bytes) async {
+    if (!await isPrinterAvailable()) {
+      print('DEBUG: Impresora no conectada; impresión cancelada');
       return false;
     }
-  }
-
-  // ==================== Gestión de conexión ====================
-
-  Future<List<Printer>> scanUsbPrinters() async {
-    print('DEBUG: Inciando escaneo de impresoras USB...');
-    final completer = Completer<List<Printer>>();
-
-    // Iniciar escaneo nativo
-    _printer.getPrinters(connectionTypes: [ConnectionType.USB]);
-
-    final sub = _printer.devicesStream.listen((list) {
-      if (!completer.isCompleted && list.isNotEmpty) {
-        completer.complete(
-            list.where((p) => p.connectionType == ConnectionType.USB).toList());
-      }
-    });
-
-    try {
-      final printers =
-          await completer.future.timeout(const Duration(seconds: 2));
-      await sub.cancel();
-      return printers;
-    } catch (e) {
-      await sub.cancel();
-      return [];
-    }
-  }
-
-  Future<bool> connectToFirstUsb() async {
-    print('DEBUG: Iniciando autoconexión USB Directa...');
-    try {
-      // Si ya sabíamos qué impresora era, verificamos físicamente primero
-      if (_lastVendorId != null) {
-        final hardwareConnected = await checkHardwareConnection();
-        if (!hardwareConnected) {
-          print('DEBUG: Impresora física desconectada. Purgando IDs guardados y forzando escaneo limpio.');
-          _lastVendorId = null;
-          _lastProductId = null;
-        }
-      }
-
-      // Siempre purgar conexión fantasma antes de intentar reconectar
-      if (_connectedPrinter != null) {
-        try {
-          await _printer.disconnect(_connectedPrinter!);
-        } catch (_) {}
-        _connectedPrinter = null;
-      }
-
-      final printers = await scanUsbPrinters();
-      if (printers.isEmpty) {
-        print('DEBUG: No se encontró hardware USB compatible en la librería');
-        return false;
-      }
-
-      // Conectamos a la primera detectada por USB
-      print('DEBUG: Enlazando con USB: ${printers.first.name}');
-      final success = await connectToPrinter(printers.first);
-
-      if (success) {
-        // Guardamos las credenciales de hardware para verificarlas rápido la próxima vez
-        _lastVendorId = int.tryParse(printers.first.vendorId ?? '');
-        _lastProductId = int.tryParse(printers.first.productId ?? '');
-      }
-
-      return success;
-    } catch (e) {
-      print('DEBUG: Error de autoconexión: $e');
-      return false;
-    }
-  }
-
-  Future<bool> connectToPrinter(Printer printer) async {
-    print(
-        'DEBUG: Estableciendo enlace con ${printer.name} (${printer.address})...');
-    try {
-      await _printer.connect(printer);
-      _connectedPrinter = printer;
-      print('DEBUG: ¡Conectado!');
-      return true;
-    } catch (e) {
-      print('DEBUG: Fallo de enlace: $e');
-      _connectedPrinter = null;
-      return false;
-    }
-  }
-
-  bool get isConnected => _connectedPrinter?.isConnected == true;
-
-  Future<bool> pingPrinter() async {
-    return await checkHardwareConnection();
+    return _epsonService.printBytes(Uint8List.fromList(bytes));
   }
 
   Future<bool> printFontAndQrTest() async {
     try {
-      final hardwareConnected = await checkHardwareConnection();
-      if (!hardwareConnected) return false;
-      final connected = await connectToFirstUsb();
-      if (!connected) return false;
-
       final bytes = <int>[];
       bytes.addAll([0x1B, 0x40]); // Init
       bytes.addAll([0x1B, 0x61, 0x01]); // Center
@@ -182,42 +84,32 @@ class PrinterService {
       bytes.addAll(_text('--- PRUEBA DE QR ---\n\n'));
       bytes.addAll([0x1B, 0x45, 0x00]); // No Bold
 
-      bytes.addAll(_text('QR TAMANO 4 (0x04):\n'));
-      bytes.addAll([0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]); // Model 2
-      bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x04]); // Size 4
-      bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]); // Lvl M
-      final d4 = 'TEST-QR-SIZE-4'.codeUnits;
-      bytes.addAll([0x1D, 0x28, 0x6B, (d4.length + 3) & 0xFF, ((d4.length + 3) >> 8) & 0xFF, 0x31, 0x50, 0x30]);
-      bytes.addAll(d4);
-      bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]); // Print
-      bytes.addAll(_text('\n\n'));
-
-      bytes.addAll(_text('QR TAMANO 5 (0x05):\n'));
-      bytes.addAll([0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]);
-      bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x05]); // Size 5
-      bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]);
-      final d5 = 'TEST-QR-SIZE-5'.codeUnits;
-      bytes.addAll([0x1D, 0x28, 0x6B, (d5.length + 3) & 0xFF, ((d5.length + 3) >> 8) & 0xFF, 0x31, 0x50, 0x30]);
-      bytes.addAll(d5);
-      bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]);
-      bytes.addAll(_text('\n\n'));
-
-      bytes.addAll(_text('QR TAMANO 6 (0x06):\n'));
-      bytes.addAll([0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]);
-      bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x06]); // Size 6
-      bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]);
-      final d6 = 'TEST-QR-SIZE-6'.codeUnits;
-      bytes.addAll([0x1D, 0x28, 0x6B, (d6.length + 3) & 0xFF, ((d6.length + 3) >> 8) & 0xFF, 0x31, 0x50, 0x30]);
-      bytes.addAll(d6);
-      bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]);
-      bytes.addAll(_text('\n\n'));
+      for (final size in [0x04, 0x05, 0x06]) {
+        bytes.addAll(_text('QR TAMANO $size:\n'));
+        bytes.addAll(
+            [0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]); // Model 2
+        bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, size]);
+        bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]); // Lvl M
+        final data = 'TEST-QR-SIZE-$size'.codeUnits;
+        bytes.addAll([
+          0x1D,
+          0x28,
+          0x6B,
+          (data.length + 3) & 0xFF,
+          ((data.length + 3) >> 8) & 0xFF,
+          0x31,
+          0x50,
+          0x30
+        ]);
+        bytes.addAll(data);
+        bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]); // Print
+        bytes.addAll(_text('\n\n'));
+      }
 
       bytes.addAll([0x1B, 0x64, 0x04]);
       bytes.addAll([0x1D, 0x56, 0x42, 0x00]);
 
-      if (_connectedPrinter == null) return false;
-      await _printer.printData(_connectedPrinter!, Uint8List.fromList(bytes));
-      return true;
+      return await _send(bytes) == true;
     } catch (e) {
       return false;
     }
@@ -225,13 +117,13 @@ class PrinterService {
 
   // ==================== Impresión x RAW Bytes ====================
 
-  // bool?  → null significa permiso USB pendiente (solo Epson), true/false éxito/fallo
+  // bool?  → null significa permiso USB pendiente, true/false éxito/fallo
   Future<bool?> printTicket({
     required String transactionId,
     required double amount,
     required String qrData,
     required String cashierName,
-    required String cashierCode,
+    required String cashierId,
     int? posLocationId,
     String? branchName,
     String? productName,
@@ -241,14 +133,9 @@ class PrinterService {
     bool? success = await _printTicketInternal(
       transactionId: transactionId,
       amount: amount,
-      qrData: qrData,
-      cashierName: cashierName,
-      cashierCode: cashierCode,
-      posLocationId: posLocationId,
+      cashierId: cashierId,
       branchName: branchName,
-      productName: productName,
       isReprint: isReprint,
-      context: context,
     );
     if (success == false) {
       print('DEBUG: Fallo primer intento, reintentando en 500ms...');
@@ -256,14 +143,9 @@ class PrinterService {
       success = await _printTicketInternal(
         transactionId: transactionId,
         amount: amount,
-        qrData: qrData,
-        cashierName: cashierName,
-        cashierCode: cashierCode,
-        posLocationId: posLocationId,
+        cashierId: cashierId,
         branchName: branchName,
-        productName: productName,
         isReprint: isReprint,
-        context: context,
       );
     }
     return success;
@@ -272,18 +154,12 @@ class PrinterService {
   Future<bool?> _printTicketInternal({
     required String transactionId,
     required double amount,
-    required String qrData,
-    required String cashierName,
-    required String cashierCode,
-    int? posLocationId,
+    required String cashierId,
     String? branchName,
-    String? productName,
     bool isReprint = false,
-    dynamic context,
   }) async {
     print('DEBUG: Iniciando impresión de venta...');
     try {
-
       print('DEBUG: Generando bytes ESC/POS...');
       // Forzamos UTC-5 para Ecuador/Colombia
       final nowUtc = DateTime.now().toUtc();
@@ -302,7 +178,7 @@ class PrinterService {
       bytes.addAll(_text('Corredor Central Norte\n'));
 
       if (branchName != null && branchName.trim().isNotEmpty) {
-        bytes.addAll(_text('Estacion: ${branchName.trim().toUpperCase()} (ID: ${posLocationId ?? 0})\n'));
+        bytes.addAll(_text('Estacion: ${branchName.trim().toUpperCase()}\n'));
       }
 
       if (isReprint) {
@@ -311,7 +187,7 @@ class PrinterService {
 
       bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
       bytes.addAll(_text('Fecha: $dateStr $timeStr\n'));
-      bytes.addAll(_text('Serial: $transactionId\n'));
+      bytes.addAll(_text('Serial: $transactionId-$cashierId\n'));
 
       bytes.addAll([0x1B, 0x45, 0x01]); // Bold
       bytes.addAll([0x1D, 0x21, 0x33]); // Tamaño GIGANTE (x4)
@@ -324,25 +200,10 @@ class PrinterService {
       // Se comenta el código QR temporalmente a solicitud del usuario
       // bytes.addAll(_cmdQrCode(qrData));
 
-      bytes.addAll([0x1B, 0x64, 0x01]);        // 1 salto
+      bytes.addAll([0x1B, 0x64, 0x01]); // 1 salto
       bytes.addAll([0x1D, 0x56, 0x42, 0x00]); // Cortar papel
 
-      final epson = await _isEpsonConnected();
-      if (epson) {
-        print('DEBUG: Enviando ticket vía USB Host API (Epson)...');
-        return await _epsonService.printBytes(Uint8List.fromList(bytes));
-      }
-
-      // Ruta flutter_thermal_printer para otras impresoras
-      final connected = await connectToFirstUsb();
-      if (!connected) {
-        print('DEBUG: No se pudo establecer conexión USB para el ticket');
-        return false;
-      }
-      if (_connectedPrinter == null) return false;
-      await _printer.printData(_connectedPrinter!, Uint8List.fromList(bytes));
-      print('DEBUG: Impresión de ticket completada');
-      return true;
+      return await _send(bytes);
     } catch (e) {
       print('DEBUG: Fallo en printTicket: $e');
       return false;
@@ -354,6 +215,7 @@ class PrinterService {
     required double totalAmount,
     required List<Map<String, dynamic>> products,
     required String cashierName,
+    String? reviewerName,
   }) async {
     print('DEBUG: Iniciando impresión de ARQUEO...');
     try {
@@ -366,10 +228,12 @@ class PrinterService {
       bytes.addAll(_text('ARQUEO DE CAJA\n'));
       bytes.addAll([0x1D, 0x21, 0x00]); // Normal
       bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
-      
+
       final now = DateTime.now();
-      final dateStr = '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
-      final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+      final dateStr =
+          '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
+      final timeStr =
+          '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
       bytes.addAll(_text('Fecha Hora: $dateStr $timeStr\n\n'));
 
       // Detalle de productos
@@ -377,14 +241,15 @@ class PrinterService {
         final qty = p['qty'].toString();
         final name = p['name'].toString().toUpperCase();
         final total = CurrencyFormatter.format(p['total'] as double);
-        bytes.addAll(_text('____ $qty x $name  ------ $total\n'));
+        bytes.addAll(_text('$qty x $name: $total\n'));
       }
       bytes.addAll(_text('\n'));
-      
+
       bytes.addAll([0x1B, 0x45, 0x01]); // Bold
       bytes.addAll([0x1B, 0x61, 0x00]); // Izquierda
       bytes.addAll([0x1D, 0x21, 0x10]); // Doble ancho
-      bytes.addAll(_text('TOTAL SISTEMA : \$${CurrencyFormatter.format(totalAmount)}\n\n'));
+      bytes.addAll(
+          _text('TOTAL: \$${CurrencyFormatter.format(totalAmount)}\n\n'));
       bytes.addAll([0x1D, 0x21, 0x00]); // Normal
       bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
 
@@ -393,33 +258,28 @@ class PrinterService {
       bytes.addAll(_text('FALTANTE:___________\n\n\n'));
 
       bytes.addAll(_text('Fiscalizador:\n'));
-      bytes.addAll(_text('Nombre:____________________\n'));
+      if (reviewerName != null && reviewerName.isNotEmpty) {
+        bytes.addAll(_text('Nombre: $reviewerName\n'));
+      } else {
+        bytes.addAll(_text('Nombre:____________________\n'));
+      }
       bytes.addAll(_text('Firma:_______________________\n\n\n'));
 
       bytes.addAll(_text('Cajero:\n'));
       bytes.addAll(_text('Nombre: $cashierName\n'));
       bytes.addAll(_text('Firma:_______________________\n\n\n\n'));
 
-      bytes.addAll([0x1B, 0x64, 0x01]);        // 1 salto
+      bytes.addAll([0x1B, 0x64, 0x01]); // 1 salto
       bytes.addAll([0x1D, 0x56, 0x42, 0x00]); // Cortar papel
 
-      final epson = await _isEpsonConnected();
-      if (epson) {
-        return await _epsonService.printBytes(Uint8List.fromList(bytes));
-      }
-
-      final connected = await connectToFirstUsb();
-      if (!connected) return false;
-      if (_connectedPrinter == null) return false;
-      await _printer.printData(_connectedPrinter!, Uint8List.fromList(bytes));
-      return true;
+      return await _send(bytes);
     } catch (e) {
       print('DEBUG: Fallo en printArqueoTicket: $e');
       return false;
     }
   }
 
-  /// Imprime ticket de cierre. Retorna null si se requiere permiso USB (Epson).
+  /// Imprime ticket de cierre. Retorna null si se requiere permiso USB.
   Future<bool?> printClosingTicket({
     required String cashierName,
     required String cashierId,
@@ -445,7 +305,6 @@ class PrinterService {
       branchName: branchName,
       totalTransactions: totalTransactions,
       totalAmount: totalAmount,
-      startTime: startTime,
       endTime: endTime,
       posLocationId: posLocationId,
       qrData: qrData,
@@ -456,7 +315,6 @@ class PrinterService {
       cashList: cashList,
       cash: cash,
       balance: balance,
-      context: context,
     );
     if (success == false) {
       print('DEBUG: Fallo primer intento de cierre, reintentando en 500ms...');
@@ -467,7 +325,6 @@ class PrinterService {
         branchName: branchName,
         totalTransactions: totalTransactions,
         totalAmount: totalAmount,
-        startTime: startTime,
         endTime: endTime,
         posLocationId: posLocationId,
         qrData: qrData,
@@ -478,7 +335,6 @@ class PrinterService {
         cashList: cashList,
         cash: cash,
         balance: balance,
-        context: context,
       );
     }
     return success;
@@ -490,7 +346,6 @@ class PrinterService {
     required String branchName,
     required int totalTransactions,
     required double totalAmount,
-    required String startTime,
     required String endTime,
     int? posLocationId,
     String? qrData,
@@ -501,11 +356,9 @@ class PrinterService {
     dynamic cashList,
     double? cash,
     double? balance,
-    dynamic context,
   }) async {
-    print('DEBUG: Iniciando impresión de CIERRE (Conexión forzada)...');
+    print('DEBUG: Iniciando impresión de CIERRE...');
     try {
-
       final bytes = <int>[];
       bytes.addAll([0x1B, 0x40]); // Init
       bytes.addAll([0x1B, 0x61, 0x00]); // Left (Justificado a la izquierda)
@@ -520,8 +373,24 @@ class PrinterService {
       bytes.addAll(_text('Código: $cashierId - ${posLocationId ?? 0}\n'));
       bytes.addAll(_text('Cierre: $endTime\n\n'));
 
-      // El breakdown (desglose) fue retirado a petición del usuario
-      // El TOTAL SISTEMA/CIERRE fue retirado a petición del usuario
+      bool isManualCash = false;
+      double coinsTotal = 0.0;
+      double billsTotal = 0.0;
+
+      if (cashList is Map && cash != null) {
+        coinsTotal = (cashList["coins_total"] as num?)?.toDouble() ?? 0.0;
+        billsTotal = (cashList["bills_total"] as num?)?.toDouble() ?? 0.0;
+
+        isManualCash = (coinsTotal == 0.0 && billsTotal == 0.0);
+      }
+
+      if (breakdown != null && breakdown.isNotEmpty && !isManualCash) {
+        bytes.addAll([0x1B, 0x61, 0x00]); // Left
+        for (final line in breakdown) {
+          bytes.addAll(_text('$line\n'));
+        }
+        bytes.addAll(_text('\n'));
+      }
 
       if (pmrCount > 0) {
         bytes.addAll([0x1B, 0x61, 0x00]); // Left
@@ -534,49 +403,46 @@ class PrinterService {
 
       bytes.addAll([0x1B, 0x61, 0x00]); // Left
       bytes.addAll(_text('Transacciones: $totalTransactions\n'));
-      bytes.addAll(_text('Reimpresiones: $reprintsCount\n\n')); 
-
-      bool isManualCash = false;
-      double coinsTotal = 0.0;
-      double billsTotal = 0.0;
-
-      if (cashList is Map && cash != null) {
-        coinsTotal = (cashList["coins_total"] as num?)?.toDouble() ?? 0.0;
-        billsTotal = (cashList["bills_total"] as num?)?.toDouble() ?? 0.0;
-        
-        isManualCash = (coinsTotal == 0.0 && billsTotal == 0.0);
-      }
+      bytes.addAll(_text('Reimpresiones: $reprintsCount\n\n'));
 
       if (!isManualCash) {
         bytes.addAll([0x1B, 0x45, 0x01]); // Bold
         bytes.addAll([0x1B, 0x61, 0x00]); // Left
         bytes.addAll([0x1D, 0x21, 0x10]); // Doble ancho
-        bytes.addAll(_text('TOTAL SISTEMA : \$${CurrencyFormatter.format(totalAmount)}\n\n'));
+        bytes.addAll(
+            _text('TOTAL: \$${CurrencyFormatter.format(totalAmount)}\n\n'));
         bytes.addAll([0x1D, 0x21, 0x00]); // Normal
         bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
       }
 
       if (cashList is Map && cash != null) {
         bytes.addAll([0x1B, 0x61, 0x00]); // Left
-        
+
         if (isManualCash) {
           bytes.addAll([0x1B, 0x45, 0x01]); // Bold on
           bytes.addAll(_text('DIGITE EFECTIVO:\n\n'));
           bytes.addAll([0x1B, 0x45, 0x00]); // Bold off
-          
+
           bytes.addAll(_text('Monedas: __________\n\n'));
           bytes.addAll(_text('Billetes: __________\n\n'));
           bytes.addAll(_text('Total: __________\n\n'));
+          bytes.addAll(_text('FONDO: \$5\n\n'));
         } else {
           bytes.addAll([0x1B, 0x45, 0x00]); // Bold off
-          bytes.addAll(_text('Monedas: \$${CurrencyFormatter.format(coinsTotal)}\n'));
-          bytes.addAll(_text('Billetes: \$${CurrencyFormatter.format(billsTotal)}\n'));
-          
+          bytes.addAll(
+              _text('Monedas: \$${CurrencyFormatter.format(coinsTotal)}\n'));
+          bytes.addAll(
+              _text('Billetes: \$${CurrencyFormatter.format(billsTotal)}\n'));
+
           bytes.addAll([0x1B, 0x45, 0x01]); // Bold on
           bytes.addAll([0x1D, 0x21, 0x11]); // x2 size
-          bytes.addAll(_text('\nEFECTIVO:\n\$${CurrencyFormatter.format(cash)}\n\n'));
+          bytes.addAll(
+              _text('\nEFECTIVO: \$${CurrencyFormatter.format(cash)}\n'));
+          bytes.addAll([0x1D, 0x21, 0x00]); // Normal size
+          bytes.addAll([0x1B, 0x45, 0x00]); // Bold off
+          bytes.addAll(_text('\nFONDO: \$5\n\n'));
         }
-        
+
         bytes.addAll([0x1B, 0x45, 0x00]); // Bold off
         bytes.addAll([0x1D, 0x21, 0x00]); // Normal size
       }
@@ -588,11 +454,13 @@ class PrinterService {
       }
 
       if (!isManualCash && balance != null && balance.abs() >= 0.01) {
-        if (balance < 0) { // Efectivo - Sistema = Negativo -> FALTANTE
+        if (balance < 0) {
+          // Efectivo - Sistema = Negativo -> FALTANTE
           bytes.addAll([0x1B, 0x61, 0x00]); // Left
           bytes.addAll([0x1B, 0x45, 0x01]); // Bold
           bytes.addAll([0x1D, 0x21, 0x00]); // Normal size
-          bytes.addAll(_text('FALTANTE: \$${CurrencyFormatter.format(balance.abs())}\n'));
+          bytes.addAll(_text(
+              'FALTANTE: \$${CurrencyFormatter.format(balance.abs())}\n'));
           bytes.addAll([0x1D, 0x21, 0x00]);
           bytes.addAll([0x1B, 0x45, 0x00]);
           bytes.addAll(_text('\n\n'));
@@ -600,24 +468,14 @@ class PrinterService {
         // Si hay sobrante (balance > 0), no se imprime visualmente por petición del cliente.
       }
 
-      bytes.addAll([0x1B, 0x64, 0x04]); // Feed 4 lines para asegurar que salga del cabezal
+      bytes.addAll([
+        0x1B,
+        0x64,
+        0x04
+      ]); // Feed 4 lines para asegurar que salga del cabezal
       bytes.addAll([0x1D, 0x56, 0x42, 0x00]); // Cortar papel
 
-      final epson = await _isEpsonConnected();
-      if (epson) {
-        print('DEBUG: Enviando cierre vía USB Host API (Epson)...');
-        return await _epsonService.printBytes(Uint8List.fromList(bytes));
-      }
-
-      final connected = await connectToFirstUsb();
-      if (!connected) {
-        print('DEBUG: No se pudo establecer conexión USB para el cierre');
-        return false;
-      }
-      if (_connectedPrinter == null) return false;
-      await _printer.printData(_connectedPrinter!, Uint8List.fromList(bytes));
-      print('DEBUG: Cierre impreso exitosamente');
-      return true;
+      return await _send(bytes);
     } catch (e) {
       print('DEBUG: Error en printClosingTicket: $e');
       return false;
@@ -628,7 +486,7 @@ class PrinterService {
 
   List<int> _text(String text) {
     // Reemplazo simple para caracteres latinos
-    return text
+    final mapped = text
         .replaceAll('á', 'a')
         .replaceAll('é', 'e')
         .replaceAll('í', 'i')
@@ -640,8 +498,13 @@ class PrinterService {
         .replaceAll('Í', 'I')
         .replaceAll('Ó', 'O')
         .replaceAll('Ú', 'U')
-        .replaceAll('Ñ', 'N')
-        .codeUnits;
+        .replaceAll('Ñ', 'N');
+    // Cualquier otro carácter fuera de ASCII imprimible se sustituye por '?'
+    // para no enviar bytes inválidos que la impresora dibuje como basura.
+    return mapped.codeUnits
+        .map((c) =>
+            (c == 0x0A || c == 0x0D || (c >= 0x20 && c <= 0x7E)) ? c : 0x3F)
+        .toList();
   }
 
   /// Genera comando nativo ESC/POS para QR Code (GS ( k)

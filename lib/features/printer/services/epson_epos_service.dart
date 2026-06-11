@@ -91,14 +91,18 @@ class EpsonEposService {
   // ---------------------------------------------------------------------------
 
   List<int> _text(String text) {
-    return text
+    final mapped = text
         .replaceAll('á', 'a').replaceAll('é', 'e')
         .replaceAll('í', 'i').replaceAll('ó', 'o')
         .replaceAll('ú', 'u').replaceAll('ñ', 'n')
         .replaceAll('Á', 'A').replaceAll('É', 'E')
         .replaceAll('Í', 'I').replaceAll('Ó', 'O')
-        .replaceAll('Ú', 'U').replaceAll('Ñ', 'N')
-        .codeUnits;
+        .replaceAll('Ú', 'U').replaceAll('Ñ', 'N');
+    // Caracteres fuera de ASCII imprimible se sustituyen por '?' para no
+    // enviar bytes inválidos a la impresora.
+    return mapped.codeUnits
+        .map((c) => (c == 0x0A || c == 0x0D || (c >= 0x20 && c <= 0x7E)) ? c : 0x3F)
+        .toList();
   }
 
   List<int> _cmdQrCode(String data) {

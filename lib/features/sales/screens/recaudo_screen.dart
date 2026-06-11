@@ -39,14 +39,18 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       floatingActionButton: (historyState.status == SalesHistoryStatus.loaded &&
-              historyState.sales.any((s) => (s['is_closed'] == 0 || s['is_closed'] == false) && s['product_id'] != 'CIERRE DE CAJA' && s['product_id'] != 'APERTURA DE CAJA'))
+              historyState.sales.any((s) =>
+                  (s['is_closed'] == 0 || s['is_closed'] == false) &&
+                  s['product_id'] != 'CIERRE DE CAJA' &&
+                  s['product_id'] != 'APERTURA DE CAJA'))
           ? Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 FloatingActionButton.extended(
                   heroTag: 'btnArqueo',
-                  onPressed: () => ClosingHelper.printArqueoTicket(context, ref),
+                  onPressed: () =>
+                      ClosingHelper.printArqueoTicket(context, ref),
                   label: const Text('ARQUEO DE CAJA'),
                   icon: const Icon(Icons.print_rounded),
                   backgroundColor: Colors.blueGrey,
@@ -74,16 +78,16 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
     );
   }
 
-
-
   Widget _buildSummaryCard(SalesHistoryState state) {
     double totalAmount = 0;
     int unclosedCount = 0;
     for (final sale in state.sales) {
       final isClosed = sale['is_closed'] == 1 || sale['is_closed'] == true;
       final productId = sale['product_id']?.toString() ?? '';
-      
-      if (!isClosed && productId != 'CIERRE DE CAJA' && productId != 'APERTURA DE CAJA') {
+
+      if (!isClosed &&
+          productId != 'CIERRE DE CAJA' &&
+          productId != 'APERTURA DE CAJA') {
         if (productId != 'PMR') {
           totalAmount += (sale['amount'] as num?)?.toDouble() ?? 0;
         }
@@ -130,7 +134,9 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
       children: [
         Icon(icon, color: const Color(0xFF6642F8), size: 36),
         const SizedBox(width: 8),
-        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 18, fontWeight: FontWeight.w500)),
+        Text(label,
+            style: const TextStyle(
+                color: Colors.grey, fontSize: 18, fontWeight: FontWeight.w500)),
         const SizedBox(width: 8),
         Expanded(
           child: Text(value,
@@ -190,18 +196,20 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
 
   Widget _buildTransactionTile(Map<String, dynamic> sale) {
     final printStatus = sale['print_status'] as int? ?? 0;
-    
+
     // Convertir 'created_at' de ISO 8601 a un formato corto (ej: 2026-05-28 14:30)
     final String dateStr = sale['created_at']?.toString() ?? '';
     String timeOnly = dateStr;
     try {
       if (dateStr.isNotEmpty) {
         final parsed = DateTime.parse(dateStr);
-        timeOnly = "${parsed.year}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')} ${parsed.hour.toString().padLeft(2, '0')}:${parsed.minute.toString().padLeft(2, '0')}";
+        timeOnly =
+            "${parsed.year}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')} ${parsed.hour.toString().padLeft(2, '0')}:${parsed.minute.toString().padLeft(2, '0')}";
       }
     } catch (_) {}
 
-    final String product = sale['product_name'] ?? sale['product_id'] ?? 'TARIFA';
+    final String product =
+        sale['product_name'] ?? sale['product_id'] ?? 'TARIFA';
     final double amount = (sale['amount'] as num?)?.toDouble() ?? 0;
     final bool isClosed = sale['is_closed'] == true;
     final String statusText = isClosed ? ' (CERRADO)' : '';
@@ -250,9 +258,7 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
                             ? Icons.print_rounded
                             : Icons.replay_rounded,
                         size: 16,
-                        color: printStatus == 0
-                            ? Colors.green
-                            : Colors.orange),
+                        color: printStatus == 0 ? Colors.green : Colors.orange),
                     const SizedBox(width: 6),
                     Text(printStatus == 0 ? 'IMPRIMIR' : 'REIMPRIMIR',
                         style: TextStyle(
@@ -309,17 +315,19 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
 
     final db = await DatabaseHelper.instance.database;
     final txCashierId = sale['cashier_id'] as int?;
-    final userQuery = txCashierId != null 
-        ? await db.query('users', where: 'id = ?', whereArgs: [txCashierId], limit: 1)
+    final userQuery = txCashierId != null
+        ? await db.query('users',
+            where: 'id = ?', whereArgs: [txCashierId], limit: 1)
         : null;
-    
+
     final fallbackAuth = ref.read(authProvider).user?.name ?? 'Operador';
-    final cashierName = userQuery != null && userQuery.isNotEmpty 
-        ? (userQuery.first['name']?.toString() ?? fallbackAuth) 
+    final cashierName = userQuery != null && userQuery.isNotEmpty
+        ? (userQuery.first['name']?.toString() ?? fallbackAuth)
         : fallbackAuth;
     final storage = ref.read(salesStorageProvider);
     final posName = await storage.getPosLocationName();
-    final branchName = posName ?? ref.read(authProvider).user?.branchName ?? 'Sucursal Juana';
+    final branchName =
+        posName ?? ref.read(authProvider).user?.branchName ?? 'Sucursal Juana';
 
     final isReprint = printStatus == 1;
 
@@ -348,10 +356,7 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
     } else {
       final serialNumber = sale['serial_number']?.toString() ?? 'N/A';
 
-      final emailString = userQuery != null && userQuery.isNotEmpty 
-          ? userQuery.first['email']?.toString() ?? '01'
-          : ref.read(authProvider).user?.email ?? '01';
-      final cashierCode = emailString.split('@').first;
+      final cashierId = txCashierId?.toString();
 
       final posLocationId = sale['pos_location_id'] as int?;
 
@@ -360,7 +365,7 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
         amount: amount,
         qrData: qrData,
         cashierName: cashierName,
-        cashierCode: cashierCode,
+        cashierId: cashierId ?? '1',
         posLocationId: posLocationId,
         branchName: branchName,
         productName: prod.productName,
@@ -383,10 +388,14 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
     if (success) {
       if (pId == 'CIERRE DE CAJA') {
         // Incrementamos el print_status pero nunca lo bloqueamos
-        await ref.read(salesHistoryProvider.notifier).markAsPrinted(transactionId, printStatus + 1);
+        await ref
+            .read(salesHistoryProvider.notifier)
+            .markAsPrinted(transactionId, printStatus + 1);
       } else {
         final newStatus = printStatus == 0 ? 1 : 2;
-        await ref.read(salesHistoryProvider.notifier).markAsPrinted(transactionId, newStatus);
+        await ref
+            .read(salesHistoryProvider.notifier)
+            .markAsPrinted(transactionId, newStatus);
       }
     } else {
       if (mounted) {
@@ -401,10 +410,12 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
     final hasDecimals = value % 1 != 0;
     if (hasDecimals) {
       final parts = value.toStringAsFixed(2).split('.');
-      final intPart = parts[0].replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+      final intPart = parts[0].replaceAllMapped(
+          RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
       return '$intPart.${parts[1]}';
     } else {
-      return value.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+      return value.toStringAsFixed(0).replaceAllMapped(
+          RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
     }
   }
 }

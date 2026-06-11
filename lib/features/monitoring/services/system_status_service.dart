@@ -21,6 +21,7 @@ class SystemStatusNotifier extends StateNotifier<SystemStatus> {
   final BackgroundSyncService _syncService;
   final PrinterService _printerService;
   Timer? _timer;
+  StreamSubscription<String>? _usbEventsSub;
 
   SystemStatusNotifier(this._dio, this._syncService, this._printerService) : super(SystemStatus()) {
     _initMonitoring();
@@ -37,6 +38,13 @@ class SystemStatusNotifier extends StateNotifier<SystemStatus> {
         state = state.copyWith(isInternetConnected: false);
       }
     });
+
+    // Conexión/desconexión física de USB: actualiza el icono de impresora
+    // al instante, sin esperar el ciclo de polling de 5 segundos.
+    _usbEventsSub = _printerService.usbEvents.listen(
+      (_) => checkPrinterNow(),
+      onError: (_) {},
+    );
 
     // Validar inicialmente
     _checkAllStatuses();
@@ -149,6 +157,7 @@ class SystemStatusNotifier extends StateNotifier<SystemStatus> {
   @override
   void dispose() {
     _timer?.cancel();
+    _usbEventsSub?.cancel();
     super.dispose();
   }
 }
