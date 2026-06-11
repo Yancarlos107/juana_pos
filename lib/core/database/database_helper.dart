@@ -5,7 +5,7 @@ import 'package:path_provider/path_provider.dart';
 
 class DatabaseHelper {
   static const _databaseName = "JuanaPos.db";
-  static const _databaseVersion = 10;
+  static const _databaseVersion = 13;
 
   // Singleton class
   DatabaseHelper._privateConstructor();
@@ -105,6 +105,19 @@ class DatabaseHelper {
       await db.execute('ALTER TABLE transactions ADD COLUMN lat REAL');
       await db.execute('ALTER TABLE transactions ADD COLUMN lon REAL');
     }
+    if (oldVersion < 11) {
+      // Migración v10 → v11: Add plot_id and server_id columns
+      await db.execute('ALTER TABLE transactions ADD COLUMN plot_id TEXT');
+      await db.execute('ALTER TABLE transactions ADD COLUMN server_id INTEGER');
+    }
+    if (oldVersion < 12) {
+      // Migración v11 → v12: Add mac_address column
+      await db.execute('ALTER TABLE transactions ADD COLUMN mac_address TEXT');
+    }
+    if (oldVersion < 13) {
+      // Migración v12 → v13: Add serial_number column
+      await db.execute('ALTER TABLE transactions ADD COLUMN serial_number TEXT');
+    }
   }
 
   Future _onCreate(Database db, int version) async {
@@ -157,7 +170,11 @@ class DatabaseHelper {
         pos_location_id INTEGER,
         is_closed INTEGER DEFAULT 0,
         lat REAL,
-        lon REAL
+        lon REAL,
+        plot_id TEXT,
+        server_id INTEGER,
+        mac_address TEXT,
+        serial_number TEXT
       )
     ''');
 

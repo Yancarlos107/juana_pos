@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:crypto/crypto.dart';
+import 'dart:math' as math;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:dio/dio.dart';
@@ -15,6 +18,10 @@ import '../../auth/services/session_service.dart';
 import 'dart:async';
 import 'recaudo_screen.dart';
 import '../helpers/closing_helper.dart';
+import 'cash_count_screen.dart';
+import '../../../core/utils/print_log_helper.dart';
+
+final dashboardCurrentIndexProvider = StateProvider<int>((ref) => 0);
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -25,6 +32,7 @@ class DashboardScreen extends ConsumerStatefulWidget {
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   int _currentIndex = 0;
+  bool _isLogoutPending = false;
   final Map<Product, int> _cart = {};
   String _posName = 'Estación';
 
@@ -67,11 +75,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Icon(Icons.shopping_cart_checkout_rounded, color: Color(0xFF6642F8)),
-            SizedBox(width: 10),
-            Text('Resumen de Venta', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 26)),
+            const Row(
+              children: [
+                Icon(Icons.shopping_cart_checkout_rounded, color: Color(0xFF6642F8)),
+                SizedBox(width: 10),
+                Text('Resumen de Venta', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 26)),
+              ],
+            ),
+            IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () => Navigator.pop(ctx),
+            ),
           ],
         ),
         content: Column(
@@ -105,22 +122,21 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('CANCELAR', style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.bold, fontSize: 16)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _processCartSales();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF6642F8),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          SizedBox(
+            width: double.infinity,
+            height: 75,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _processCartSales();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6642F8),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text('COBRAR E IMPRIMIR', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
             ),
-            child: const Text('COBRAR E IMPRIMIR', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -129,6 +145,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   void _processCartSales() async {
     if (_cart.isEmpty) return;
+
+    // 1. Clonar el carrito para procesarlo en segundo plano
+    final cartCopy = Map<Product, int>.from(_cart);
+
+    // 2. Limpiar visualmente el carrito INMEDIATAMENTE para agilizar a la vista
+    setState(() {
+      _cart.clear();
+    });
+
+    final int totalItems = cartCopy.values.fold(0, (sum, val) => sum + val);
+    await PrintLogHelper.logSale(totalItems);
 
     showDialog(
       context: context,
@@ -149,7 +176,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
     int successfulPrints = 0;
 
-    for (final entry in _cart.entries) {
+    for (final entry in cartCopy.entries) {
       final product = entry.key;
       final quantity = entry.value;
 
@@ -168,10 +195,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             final posName = await storage.getPosLocationName();
             final branchName = posName ?? ref.read(authProvider).user?.branchName;
 
-            final localId = result.rawData['local_id'] as int? ?? 0;
-            final deviceHash = await storage.getDeviceHash();
             final posLocationId = await storage.getPosLocationId();
-            final serialNumber = '$deviceHash-${localId.toString().padLeft(7, '0')}-$posLocationId';
+            final serialNumber = result.rawData['serial_number'] as String? ?? 'N/A';
 
             final db = await DatabaseHelper.instance.database;
             final userRows = await db.query('users', limit: 1);
@@ -210,12 +235,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
     _loadBalance();
     ref.read(salesHistoryProvider.notifier).fetchHistory();
-
-    if (mounted && successfulPrints > 0) {
-      setState(() {
-        _cart.clear();
-      });
-    }
   }
 
   void _showInsufficientBalanceDialog(String message) {
@@ -318,7 +337,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 child: ElevatedButton(
                   onPressed: () {
                     Navigator.pop(ctx);
-                    ClosingHelper.showClosingConfirmation(context, ref, isLogout: true);
+                    setState(() {
+                      _isLogoutPending = true;
+                      _currentIndex = 2;
+                    });
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.orange,
@@ -452,6 +474,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       body: IndexedStack(index: _currentIndex, children: [
         _buildSalesView(balanceState, productsState, qrState),
         _buildRecaudoSection(),
+        CashCountScreen(isLogout: _isLogoutPending),
       ]),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(color: Colors.white, boxShadow: [
@@ -461,10 +484,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               offset: const Offset(0, -2))
         ]),
         child: BottomNavigationBar(
+          type: BottomNavigationBarType.fixed,
           currentIndex: _currentIndex,
           onTap: (i) {
-            if (i == 2) {
+            if (i == 3) {
               _showLogoutDialog();
+            } else if (i == 1) {
+              _showRecaudoPinDialog();
             } else {
               setState(() => _currentIndex = i);
             }
@@ -479,6 +505,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 icon: Icon(Icons.qr_code_2_rounded), label: 'Ventas QR'),
             BottomNavigationBarItem(
                 icon: Icon(Icons.receipt_long_rounded), label: 'Recaudo'),
+            BottomNavigationBarItem(
+                icon: Icon(Icons.inbox_rounded), label: 'Cierre'),
             BottomNavigationBarItem(
                 icon: Icon(Icons.logout_rounded, color: Colors.redAccent), label: 'Cerrar Sesión')
           ],
@@ -496,7 +524,52 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         children: [
           Row(
             children: [
+
               Expanded(
+                flex: 3, // Mayor flex para que sea más grande
+                child: ElevatedButton.icon(
+                  onPressed: _cart.isEmpty ? null : _showCartSummaryDialog,
+                  icon: const Icon(Icons.payment_rounded, size: 28),
+                  label: Text('Confirmar Pago (\$ ${_formatCurrency(_cartTotalValue)})', 
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF6642F8),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: Colors.grey.shade300,
+                    disabledForegroundColor: Colors.grey,
+                    padding: const EdgeInsets.symmetric(vertical: 32), // 30% más grande en altura
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    elevation: _cart.isEmpty ? 0 : 4,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              if (_cart.isNotEmpty) ...[
+                Expanded(
+                  flex: 1,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _cart.clear();
+                      });
+                    },
+                    icon: const Icon(Icons.delete_sweep_rounded),
+                    label: const Text('Limpiar', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blueGrey,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      elevation: 2,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              // Los botones PMR, Panico, Novedades ahora irán a la derecha o debajo si no caben
+              // Como la fila puede apretarse mucho, vamos a mantenerlos pero con flex 1
+              Expanded(
+                flex: 1,
                 child: _buildActionButton(
                   icon: Icons.accessible_rounded,
                   label: 'PMR',
@@ -506,6 +579,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ),
               const SizedBox(width: 12),
               Expanded(
+                flex: 1,
                 child: _buildActionButton(
                   icon: Icons.warning_rounded,
                   label: 'Pánico',
@@ -537,52 +611,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ),
               const SizedBox(width: 12),
               Expanded(
+                flex: 1,
                 child: _buildActionButton(
                   icon: Icons.report_problem_rounded,
                   label: 'Novedades',
                   color: Colors.orange,
                   onPressed: _showNovedadesModal,
-                ),
-              ),
-              const SizedBox(width: 12),
-              if (_cart.isNotEmpty) ...[
-                Expanded(
-                  flex: 1,
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _cart.clear();
-                      });
-                    },
-                    icon: const Icon(Icons.delete_sweep_rounded),
-                    label: const Text('Limpiar', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blueGrey,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 24),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      elevation: 2,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-              ],
-              Expanded(
-                flex: 2,
-                child: ElevatedButton.icon(
-                  onPressed: _cart.isEmpty ? null : _showCartSummaryDialog,
-                  icon: const Icon(Icons.payment_rounded),
-                  label: Text('Confirmar Pago (\$ ${_formatCurrency(_cartTotalValue)})', 
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF6642F8),
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: Colors.grey.shade300,
-                    disabledForegroundColor: Colors.grey,
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    elevation: _cart.isEmpty ? 0 : 4,
-                  ),
                 ),
               ),
             ],
@@ -610,6 +644,60 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         elevation: 2,
       ),
+    );
+  }
+
+  void _showRecaudoPinDialog() {
+    String pin = '';
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Acceso Restringido', style: TextStyle(fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Ingrese la contraseña de fiscalizador para ver el recaudo:'),
+              const SizedBox(height: 15),
+              TextField(
+                obscureText: true,
+                keyboardType: TextInputType.number,
+                autofocus: true,
+                onChanged: (val) => pin = val,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Contraseña',
+                  prefixIcon: Icon(Icons.lock_outline),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (pin == '1234') {
+                  Navigator.of(ctx).pop();
+                  setState(() => _currentIndex = 1);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Contraseña incorrecta'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6642F8)),
+              child: const Text('Ingresar', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -792,29 +880,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(children: [
-            Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                    color: const Color(0xFF6642F8).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12)),
-                child: const Icon(Icons.qr_code_scanner_rounded,
-                    color: Color(0xFF6642F8), size: 24)),
-            const SizedBox(width: 14),
-            const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Venta Tickete',
-                      style: TextStyle(
-                          color: Color(0xFF3F3D56),
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold)),
-                  Text('Seleccione tarifa',
-                      style: TextStyle(color: Colors.grey, fontSize: 16))
-                ]),
-          ]),
-          const SizedBox(height: 32),
+          // Se retiró el título y el ícono a petición del usuario para ahorrar espacio vertical
           if (productsState.status == ProductsStatus.error && productsState.products.isEmpty)
             Text(productsState.errorMessage ?? 'Error al cargar tarifas',
                 style: const TextStyle(color: Colors.redAccent))
@@ -822,7 +888,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             Wrap(
               spacing: 12,
               runSpacing: 12,
-              alignment: WrapAlignment.center,
+              alignment: WrapAlignment.start, // Alineado a la izquierda (start)
               children: productsState.products
                   .map((p) => _buildProductCard(p))
                   .toList(),
@@ -877,8 +943,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       onTap: () => _addToCart(product),
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        width: 190, // Aún más ancho
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20), // Más padding
+        width: 250, // Tarjetas de tarifa más grandes
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16), // Padding reducido para compensar letras grandes
         decoration: BoxDecoration(
           color: isSelected ? iconColor.withOpacity(0.05) : Colors.white,
           borderRadius: BorderRadius.circular(12),
@@ -894,15 +960,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: iconColor.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(iconData, color: iconColor, size: 36), // Icono más grande
-            ),
-            const SizedBox(height: 12),
             Text(
               product.productName,
               textAlign: TextAlign.center,
@@ -911,17 +968,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   color: Color(0xFF3F3D56),
-                  fontSize: 18), // Letra de tarifa más grande
+                  fontSize: 32), // Letra de tarifa MUY grande
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 12), // Reducido
             Text(
               '\$ ${_formatCurrency(product.value)}',
               style: const TextStyle(
                   color: Color(0xFF6642F8),
                   fontWeight: FontWeight.w900,
-                  fontSize: 20), // Precio más grande
+                  fontSize: 38), // Precio MUY grande
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12), // Reducido
             if (isSelected)
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -1043,6 +1100,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final posLocationId = await ref.read(localStorageProvider).getPosLocationId();
     final cashierId = ref.read(authProvider).user?.id ?? 1;
 
+    final random = math.Random();
+    final plotIdBytes = List<int>.generate(16, (i) => random.nextInt(256));
+    final plotId = md5.convert(plotIdBytes).toString();
+
     await db.insert('transactions', {
       'id': 'PMR-${DateTime.now().millisecondsSinceEpoch}',
       'session_id': sessionId,
@@ -1054,6 +1115,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       'status': 'pending',
       'created_at': DateTime.now().toIso8601String(),
       'qr_data': 'PMR_MANUAL',
+      'plot_id': plotId,
     });
     ref.read(salesHistoryProvider.notifier).fetchHistory();
 

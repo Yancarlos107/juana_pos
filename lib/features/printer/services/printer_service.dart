@@ -22,6 +22,19 @@ class PrinterService {
 
   Future<bool> checkHardwareConnection() async {
     try {
+      /*
+      // INTENTO DE FIX (Retirado temporalmente): 
+      // 1208 (0x04B8) es Epson. Usamos Epson por defecto para evitar hacer match 
+      // con la impresora interna de la tablet (clase 7) cuando _lastVendorId es null en el arranque.
+      final bool isConnected =
+          await _platform.invokeMethod('isUsbDeviceConnected', {
+        'vendorId': _lastVendorId ?? 1208, 
+        'productId': _lastProductId ?? -1,
+      });
+      return isConnected;
+      */
+
+      // Lógica original (Con el problema de caché de la tablet interna)
       final bool isConnected =
           await _platform.invokeMethod('isUsbDeviceConnected', {
         'vendorId': _lastVendorId ?? -1,
@@ -336,6 +349,76 @@ class PrinterService {
     }
   }
 
+  /// Imprime ticket de Arqueo.
+  Future<bool?> printArqueoTicket({
+    required double totalAmount,
+    required List<Map<String, dynamic>> products,
+    required String cashierName,
+  }) async {
+    print('DEBUG: Iniciando impresión de ARQUEO...');
+    try {
+      final bytes = <int>[];
+      bytes.addAll([0x1B, 0x40]); // Init
+      bytes.addAll([0x1B, 0x61, 0x00]); // Izquierda para todo el tiquete
+      bytes.addAll([0x1B, 0x45, 0x01]); // Bold
+      bytes.addAll(_text('CORREDOR CENTRAL NORTE\n'));
+      bytes.addAll([0x1D, 0x21, 0x11]); // Tamaño x2
+      bytes.addAll(_text('ARQUEO DE CAJA\n'));
+      bytes.addAll([0x1D, 0x21, 0x00]); // Normal
+      bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
+      
+      final now = DateTime.now();
+      final dateStr = '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
+      final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+      bytes.addAll(_text('Fecha Hora: $dateStr $timeStr\n\n'));
+
+      // Detalle de productos
+      for (var p in products) {
+        final qty = p['qty'].toString();
+        final name = p['name'].toString().toUpperCase();
+        final total = CurrencyFormatter.format(p['total'] as double);
+        bytes.addAll(_text('____ $qty x $name  ------ $total\n'));
+      }
+      bytes.addAll(_text('\n'));
+      
+      bytes.addAll([0x1B, 0x45, 0x01]); // Bold
+      bytes.addAll([0x1B, 0x61, 0x00]); // Izquierda
+      bytes.addAll([0x1D, 0x21, 0x10]); // Doble ancho
+      bytes.addAll(_text('TOTAL SISTEMA : \$${CurrencyFormatter.format(totalAmount)}\n\n'));
+      bytes.addAll([0x1D, 0x21, 0x00]); // Normal
+      bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
+
+      bytes.addAll(_text('EFECTIVO:____________\n\n'));
+      bytes.addAll(_text('SOBRANTE:__________\n'));
+      bytes.addAll(_text('FALTANTE:___________\n\n\n'));
+
+      bytes.addAll(_text('Fiscalizador:\n'));
+      bytes.addAll(_text('Nombre:____________________\n'));
+      bytes.addAll(_text('Firma:_______________________\n\n\n'));
+
+      bytes.addAll(_text('Cajero:\n'));
+      bytes.addAll(_text('Nombre: $cashierName\n'));
+      bytes.addAll(_text('Firma:_______________________\n\n\n\n'));
+
+      bytes.addAll([0x1B, 0x64, 0x01]);        // 1 salto
+      bytes.addAll([0x1D, 0x56, 0x42, 0x00]); // Cortar papel
+
+      final epson = await _isEpsonConnected();
+      if (epson) {
+        return await _epsonService.printBytes(Uint8List.fromList(bytes));
+      }
+
+      final connected = await connectToFirstUsb();
+      if (!connected) return false;
+      if (_connectedPrinter == null) return false;
+      await _printer.printData(_connectedPrinter!, Uint8List.fromList(bytes));
+      return true;
+    } catch (e) {
+      print('DEBUG: Fallo en printArqueoTicket: $e');
+      return false;
+    }
+  }
+
   /// Imprime ticket de cierre. Retorna null si se requiere permiso USB (Epson).
   Future<bool?> printClosingTicket({
     required String cashierName,
@@ -351,6 +434,9 @@ class PrinterService {
     int pmrCount = 0,
     List<String>? pmrHours,
     int reprintsCount = 0,
+    dynamic cashList,
+    double? cash,
+    double? balance,
     dynamic context,
   }) async {
     bool? success = await _printClosingTicketInternal(
@@ -367,6 +453,9 @@ class PrinterService {
       pmrCount: pmrCount,
       pmrHours: pmrHours,
       reprintsCount: reprintsCount,
+      cashList: cashList,
+      cash: cash,
+      balance: balance,
       context: context,
     );
     if (success == false) {
@@ -386,6 +475,9 @@ class PrinterService {
         pmrCount: pmrCount,
         pmrHours: pmrHours,
         reprintsCount: reprintsCount,
+        cashList: cashList,
+        cash: cash,
+        balance: balance,
         context: context,
       );
     }
@@ -406,6 +498,9 @@ class PrinterService {
     int pmrCount = 0,
     List<String>? pmrHours,
     int reprintsCount = 0,
+    dynamic cashList,
+    double? cash,
+    double? balance,
     dynamic context,
   }) async {
     print('DEBUG: Iniciando impresión de CIERRE (Conexión forzada)...');
@@ -419,19 +514,14 @@ class PrinterService {
       bytes.addAll(_text('CIERRE DE CAJA\n'));
       bytes.addAll([0x1D, 0x21, 0x00]); // Normal
       bytes.addAll([0x1B, 0x45, 0x00]);
-      bytes.addAll(_text('Estacion: $branchName (ID: ${posLocationId ?? 0})\n\n'));
+      bytes.addAll(_text('Estacion: $branchName\n\n'));
       bytes.addAll([0x1B, 0x61, 0x00]); // Left
       bytes.addAll(_text('Cajero: $cashierName\n'));
-      bytes.addAll(_text('Código: $cashierId\n'));
+      bytes.addAll(_text('Código: $cashierId - ${posLocationId ?? 0}\n'));
       bytes.addAll(_text('Cierre: $endTime\n\n'));
 
-      if (breakdown != null && breakdown.isNotEmpty) {
-        bytes.addAll([0x1B, 0x61, 0x00]); // Left
-        for (final line in breakdown) {
-          bytes.addAll(_text('$line\n'));
-        }
-        bytes.addAll(_text('\n'));
-      }
+      // El breakdown (desglose) fue retirado a petición del usuario
+      // El TOTAL SISTEMA/CIERRE fue retirado a petición del usuario
 
       if (pmrCount > 0) {
         bytes.addAll([0x1B, 0x61, 0x00]); // Left
@@ -444,13 +534,52 @@ class PrinterService {
 
       bytes.addAll([0x1B, 0x61, 0x00]); // Left
       bytes.addAll(_text('Transacciones: $totalTransactions\n'));
-      bytes.addAll(_text('Reimpresiones: $reprintsCount\n\n')); // NEW
-      bytes.addAll([0x1B, 0x61, 0x00]); // Left
-      bytes.addAll([0x1B, 0x45, 0x01]);
-      bytes.addAll([0x1D, 0x21, 0x11]);
-      bytes.addAll(_text('TOTAL: \$ ${CurrencyFormatter.format(totalAmount)}\n'));
-      bytes.addAll([0x1D, 0x21, 0x00]);
-      bytes.addAll([0x1B, 0x45, 0x00]);
+      bytes.addAll(_text('Reimpresiones: $reprintsCount\n\n')); 
+
+      bool isManualCash = false;
+      double coinsTotal = 0.0;
+      double billsTotal = 0.0;
+
+      if (cashList is Map && cash != null) {
+        coinsTotal = (cashList["coins_total"] as num?)?.toDouble() ?? 0.0;
+        billsTotal = (cashList["bills_total"] as num?)?.toDouble() ?? 0.0;
+        
+        isManualCash = (coinsTotal == 0.0 && billsTotal == 0.0);
+      }
+
+      if (!isManualCash) {
+        bytes.addAll([0x1B, 0x45, 0x01]); // Bold
+        bytes.addAll([0x1B, 0x61, 0x00]); // Left
+        bytes.addAll([0x1D, 0x21, 0x10]); // Doble ancho
+        bytes.addAll(_text('TOTAL SISTEMA : \$${CurrencyFormatter.format(totalAmount)}\n\n'));
+        bytes.addAll([0x1D, 0x21, 0x00]); // Normal
+        bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
+      }
+
+      if (cashList is Map && cash != null) {
+        bytes.addAll([0x1B, 0x61, 0x00]); // Left
+        
+        if (isManualCash) {
+          bytes.addAll([0x1B, 0x45, 0x01]); // Bold on
+          bytes.addAll(_text('DIGITE EFECTIVO:\n\n'));
+          bytes.addAll([0x1B, 0x45, 0x00]); // Bold off
+          
+          bytes.addAll(_text('Monedas: __________\n\n'));
+          bytes.addAll(_text('Billetes: __________\n\n'));
+          bytes.addAll(_text('Total: __________\n\n'));
+        } else {
+          bytes.addAll([0x1B, 0x45, 0x00]); // Bold off
+          bytes.addAll(_text('Monedas: \$${CurrencyFormatter.format(coinsTotal)}\n'));
+          bytes.addAll(_text('Billetes: \$${CurrencyFormatter.format(billsTotal)}\n'));
+          
+          bytes.addAll([0x1B, 0x45, 0x01]); // Bold on
+          bytes.addAll([0x1D, 0x21, 0x11]); // x2 size
+          bytes.addAll(_text('\nEFECTIVO:\n\$${CurrencyFormatter.format(cash)}\n\n'));
+        }
+        
+        bytes.addAll([0x1B, 0x45, 0x00]); // Bold off
+        bytes.addAll([0x1D, 0x21, 0x00]); // Normal size
+      }
 
       if (qrData != null && qrData.isNotEmpty) {
         bytes.addAll(_text('\n'));
@@ -458,8 +587,21 @@ class PrinterService {
         bytes.addAll(_text('\n\n'));
       }
 
-      bytes.addAll([0x1B, 0x64, 0x02]);
-      bytes.addAll([0x1D, 0x56, 0x42, 0x00]);
+      if (!isManualCash && balance != null && balance.abs() >= 0.01) {
+        if (balance < 0) { // Efectivo - Sistema = Negativo -> FALTANTE
+          bytes.addAll([0x1B, 0x61, 0x00]); // Left
+          bytes.addAll([0x1B, 0x45, 0x01]); // Bold
+          bytes.addAll([0x1D, 0x21, 0x00]); // Normal size
+          bytes.addAll(_text('FALTANTE: \$${CurrencyFormatter.format(balance.abs())}\n'));
+          bytes.addAll([0x1D, 0x21, 0x00]);
+          bytes.addAll([0x1B, 0x45, 0x00]);
+          bytes.addAll(_text('\n\n'));
+        }
+        // Si hay sobrante (balance > 0), no se imprime visualmente por petición del cliente.
+      }
+
+      bytes.addAll([0x1B, 0x64, 0x04]); // Feed 4 lines para asegurar que salga del cabezal
+      bytes.addAll([0x1D, 0x56, 0x42, 0x00]); // Cortar papel
 
       final epson = await _isEpsonConnected();
       if (epson) {

@@ -39,13 +39,29 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       floatingActionButton: (historyState.status == SalesHistoryStatus.loaded &&
-              historyState.sales.any((s) => s['is_closed'] != true))
-          ? FloatingActionButton.extended(
-              onPressed: () => _showClosingConfirmation(),
-              label: const Text('CIERRE DE CAJA'),
-              icon: const Icon(Icons.summarize_rounded),
-              backgroundColor: const Color(0xFF6642F8),
-              foregroundColor: Colors.white,
+              historyState.sales.any((s) => (s['is_closed'] == 0 || s['is_closed'] == false) && s['product_id'] != 'CIERRE DE CAJA' && s['product_id'] != 'APERTURA DE CAJA'))
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                FloatingActionButton.extended(
+                  heroTag: 'btnArqueo',
+                  onPressed: () => ClosingHelper.printArqueoTicket(context, ref),
+                  label: const Text('ARQUEO DE CAJA'),
+                  icon: const Icon(Icons.print_rounded),
+                  backgroundColor: Colors.blueGrey,
+                  foregroundColor: Colors.white,
+                ),
+                const SizedBox(height: 12),
+                FloatingActionButton.extended(
+                  heroTag: 'btnCierre',
+                  onPressed: () => _showClosingConfirmation(),
+                  label: const Text('CIERRE DE CAJA'),
+                  icon: const Icon(Icons.summarize_rounded),
+                  backgroundColor: const Color(0xFF6642F8),
+                  foregroundColor: Colors.white,
+                ),
+              ],
             )
           : null,
       body: Column(
@@ -64,8 +80,13 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
     double totalAmount = 0;
     int unclosedCount = 0;
     for (final sale in state.sales) {
-      if (sale['is_closed'] != true) {
-        totalAmount += (sale['amount'] as num?)?.toDouble() ?? 0;
+      final isClosed = sale['is_closed'] == 1 || sale['is_closed'] == true;
+      final productId = sale['product_id']?.toString() ?? '';
+      
+      if (!isClosed && productId != 'CIERRE DE CAJA' && productId != 'APERTURA DE CAJA') {
+        if (productId != 'PMR') {
+          totalAmount += (sale['amount'] as num?)?.toDouble() ?? 0;
+        }
         unclosedCount++;
       }
     }
@@ -325,9 +346,7 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
         printResult = false;
       }
     } else {
-      final localId = sale['local_id'] as int? ?? 0;
-      final deviceHash = await ref.read(salesStorageProvider).getDeviceHash();
-      final serialNumber = '$deviceHash-${localId.toString().padLeft(7, '0')}';
+      final serialNumber = sale['serial_number']?.toString() ?? 'N/A';
 
       final emailString = userQuery != null && userQuery.isNotEmpty 
           ? userQuery.first['email']?.toString() ?? '01'

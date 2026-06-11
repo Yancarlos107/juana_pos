@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
+import 'dart:math' as math;
 import '../providers/sales_providers.dart';
 import '../../printer/services/printer_service.dart';
 import '../../auth/providers/auth_providers.dart';
@@ -8,9 +10,11 @@ import '../../auth/services/session_service.dart';
 import '../../../core/storage/local_storage_repository.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/database/database_helper.dart';
+import '../../../core/utils/device_utils.dart';
 import '../models/tarifa_model.dart';
 import '../../monitoring/services/system_status_service.dart';
 import '../../sync/services/background_sync_service.dart';
+import '../../../core/utils/print_log_helper.dart';
 
 class ClosingHelper {
   static String formatCurrency(double value) {
@@ -21,6 +25,110 @@ class ClosingHelper {
       return '$intPart.${parts[1]}';
     } else {
       return value.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+    }
+  }
+
+  static Future<double> getUnclosedTotal(WidgetRef ref) async {
+    final db = await DatabaseHelper.instance.database;
+    final storage = ref.read(localStorageProvider);
+    final branchId = await storage.getBranchId() ?? 0;
+    
+    final sessionQuery = await db.query('sessions', where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
+    if (sessionQuery.isEmpty) return 0;
+
+    final currentCashierId = ref.read(authProvider).user?.id ?? 1;
+    final sessionId = sessionQuery.first['id'] as int;
+    final unclosedSales = await db.query(
+      'transactions', 
+      where: 'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id != ? AND product_id != ?', 
+      whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA']
+    );
+
+    double totalAmount = 0;
+    for (final sale in unclosedSales) {
+      if (sale['product_id'] == 'PMR') continue;
+      final amount = (sale['amount'] as num?)?.toDouble() ?? 0;
+      totalAmount += amount;
+    }
+    return totalAmount;
+  }
+
+  static Future<void> printArqueoTicket(BuildContext context, WidgetRef ref) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator(color: Color(0xFF6642F8))),
+    );
+
+    try {
+      final db = await DatabaseHelper.instance.database;
+      final storage = ref.read(localStorageProvider);
+      final branchId = await storage.getBranchId() ?? 0;
+      
+      final sessionQuery = await db.query('sessions', where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
+      if (sessionQuery.isEmpty) {
+        if (context.mounted) Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No hay sesión abierta.')));
+        return;
+      }
+
+      final currentCashierId = ref.read(authProvider).user?.id ?? 1;
+      final sessionId = sessionQuery.first['id'] as int;
+      final unclosedSales = await db.query(
+        'transactions', 
+        where: 'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id != ? AND product_id != ?', 
+        whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA']
+      );
+
+      double totalAmount = 0;
+      Map<String, int> breakdownQty = {};
+
+      for (final sale in unclosedSales) {
+        if (sale['product_id'] == 'PMR') continue;
+        final amount = (sale['amount'] as num?)?.toDouble() ?? 0;
+        final productId = sale['product_id']?.toString() ?? 'Desc.';
+        totalAmount += amount;
+        breakdownQty[productId] = (breakdownQty[productId] ?? 0) + 1;
+      }
+
+      final productsState = ref.read(productsProvider);
+      List<Map<String, dynamic>> productList = [];
+      
+      breakdownQty.forEach((pId, qty) {
+        final prod = productsState.products.firstWhere((p) => p.id == pId,
+            orElse: () => Product(id: pId, productName: 'Tarifa $pId', value: 0));
+        productList.add({
+          'qty': qty,
+          'name': prod.productName,
+          'total': qty * prod.value
+        });
+      });
+
+      final isPrinterConnected = await ref.read(systemStatusProvider.notifier).checkPrinterNow();
+      if (!isPrinterConnected) {
+        if (context.mounted) Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Impresora no conectada.')));
+        return;
+      }
+
+      final cashierName = ref.read(authProvider).user?.name ?? 'Operador';
+      
+      final printResult = await ref.read(printerServiceProvider).printArqueoTicket(
+        totalAmount: totalAmount,
+        products: productList,
+        cashierName: cashierName,
+      );
+
+      if (context.mounted) Navigator.pop(context); // Cerrar loader
+      
+      if (printResult == true && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Arqueo impreso con éxito.')));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
     }
   }
 
@@ -51,8 +159,8 @@ class ClosingHelper {
     final sessionId = sessionQuery.first['id'] as int;
     final unclosedSales = await db.query(
       'transactions', 
-      where: 'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id != ?', 
-      whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA']
+      where: 'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id != ? AND product_id != ?', 
+      whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA']
     );
 
     if (unclosedSales.isEmpty) {
@@ -290,7 +398,34 @@ class ClosingHelper {
     return result ?? false;
   }
 
-  static Future<void> _performClosing(BuildContext context, WidgetRef ref, bool isLogout) async {
+  // --- Nueva función para Arqueo de Caja (Pantalla de Conteo) ---
+  static Future<void> performArqueoClosing(
+    BuildContext context, 
+    WidgetRef ref, 
+    dynamic cashList, 
+    double totalCash, 
+    double balance, 
+    {bool isLogout = false}
+  ) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator(color: Color(0xFF6642F8))),
+    );
+
+    final isPrinterConnected = await ref.read(systemStatusProvider.notifier).checkPrinterNow();
+
+    if (context.mounted) Navigator.pop(context); // Cerrar loading
+
+    if (!isPrinterConnected) {
+      final proceed = await _showPrinterWarningDialog(context);
+      if (!proceed) return;
+    }
+
+    _performClosing(context, ref, isLogout, cashList: cashList, cash: totalCash, balance: balance);
+  }
+
+  static Future<void> _performClosing(BuildContext context, WidgetRef ref, bool isLogout, {dynamic cashList, double? cash, double? balance}) async {
     final db = await DatabaseHelper.instance.database;
     final storage = ref.read(localStorageProvider);
     final branchId = await storage.getBranchId() ?? 0;
@@ -306,8 +441,8 @@ class ClosingHelper {
     final currentCashierId = ref.read(authProvider).user?.id ?? 1;
     final unclosedSales = await db.query(
       'transactions', 
-      where: 'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id != ?', 
-      whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA']
+      where: 'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id != ? AND product_id != ?', 
+      whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA']
     );
 
     if (unclosedSales.isEmpty) {
@@ -381,7 +516,7 @@ class ClosingHelper {
         '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
     final closingLabel = '$dateStr $timeStr';
 
-    final jsonStr = jsonEncode({
+    final payloadMap = {
       "c": cashierName,
       "b": branchId,
       "a": totalAmount,
@@ -390,8 +525,18 @@ class ClosingHelper {
       "d": dateStr,
       "t": timeStr,
       "v": "v2"
-    });
+    };
 
+    if (cashList != null && cash != null && balance != null) {
+      if (cashList is Map) {
+        payloadMap["coins_total"] = cashList["coins_total"];
+        payloadMap["bills_total"] = cashList["bills_total"];
+      }
+      payloadMap["cash"] = cash;
+      payloadMap["balance"] = balance;
+    }
+
+    final jsonStr = jsonEncode(payloadMap);
     final qrData = base64Encode(utf8.encode(jsonStr));
 
     // Mostrar loader
@@ -417,6 +562,9 @@ class ClosingHelper {
       pmrCount: pmrCount,
       pmrHours: pmrHours,
       reprintsCount: reprintsCount,
+      cashList: cashList,
+      cash: cash,
+      balance: balance,
     );
 
     if (printResult == null && context.mounted) {
@@ -434,6 +582,11 @@ class ClosingHelper {
       final sessionQuery = await db.query('sessions', where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
       final int? currentSessionId = sessionQuery.isNotEmpty ? sessionQuery.first['id'] as int : null;
 
+      final random = math.Random();
+      final plotIdBytes = List<int>.generate(16, (i) => random.nextInt(256));
+      final plotId = md5.convert(plotIdBytes).toString();
+      final macAddress = await DeviceUtils.getMacAddress();
+
       await db.insert('transactions', {
         'id': 'closure-${now.millisecondsSinceEpoch}',
         'session_id': currentSessionId,
@@ -447,6 +600,8 @@ class ClosingHelper {
         'qr_data': qrData,
         'print_status': printSuccess ? 1 : 0,
         'is_closed': 1, // EL CIERRE DE CAJA YA NACE CERRADO
+        'plot_id': plotId,
+        'mac_address': macAddress,
       });
 
       // Marcar las ventas cerradas por este cajero como cerradas
@@ -469,6 +624,9 @@ class ClosingHelper {
             backgroundColor: Colors.redAccent));
       }
     }
+
+    // Registrar cierre en el TXT local
+    await PrintLogHelper.logClosure();
 
     if (!printSuccess) {
       if (context.mounted) {

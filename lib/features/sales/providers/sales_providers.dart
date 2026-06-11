@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'dart:math';
 
 import '../../../core/network/dio_client.dart';
@@ -10,6 +11,9 @@ import '../services/sales_service.dart';
 import '../../../core/utils/currency_formatter.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../monitoring/services/system_status_service.dart';
+import '../../../core/utils/device_utils.dart';
+import '../../../core/utils/print_log_helper.dart';
+
 // ==================== Proveedor del Servicio ====================
 
 final salesServiceProvider = Provider<SalesService>((ref) {
@@ -248,6 +252,15 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
       final qrCodeStr = String.fromCharCodes(Iterable.generate(
           32, (_) => chars.codeUnitAt(random.nextInt(chars.length))));
 
+      // Generar plot_id único para la venta offline
+      final plotIdBytes = List<int>.generate(16, (i) => random.nextInt(256));
+      final plotId = md5.convert(plotIdBytes).toString();
+
+      // Generar serial_number con random de 7 digitos en lugar de usar el id secuencial
+      final randomNum = random.nextInt(10000000).toString().padLeft(7, '0');
+      final deviceHash = await _storage.getDeviceHash();
+      final serialNumber = '$deviceHash-$randomNum-$posLocationId';
+
       
       // 2. Decrementar saldo local tras éxito (DESHABILITADO POR PM)
       final newBalance = currentBalance; // El saldo no se reduce
@@ -262,6 +275,9 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
       
       // Obtener GPS cacheado
       final gpsData = await _storage.getGpsLocation();
+      
+      // Obtener MAC
+      final macAddress = await DeviceUtils.getMacAddress();
 
       final insertedLocalId = await db.insert('transactions', {
         'id': localId,
@@ -277,13 +293,16 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
         'print_status': 0, // Inicia en 0, la UI lo actualizará a 1 si imprime
         'lat': gpsData?['lat'],
         'lon': gpsData?['lon'],
+        'plot_id': plotId,
+        'mac_address': macAddress,
+        'serial_number': serialNumber,
       });
 
       final result = QrPurchaseResult(
         qrCode: qrCodeStr,
         transactionId: localId,
         yourNewBalance: newBalance,
-        rawData: {'local_id': insertedLocalId},
+        rawData: {'local_id': insertedLocalId, 'serial_number': serialNumber},
       );
 
       // 5. Actualizar contador visual inmediatamente
@@ -295,9 +314,14 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
       );
       return true;
     } catch (e) {
+      final errorMsg = e.toString().replaceFirst('Exception: ', '');
+      
+      // Registrar en el archivo TXT el error de BD
+      await PrintLogHelper.logDbError(errorMsg);
+
       state = state.copyWith(
         status: QrPurchaseStatus.error,
-        errorMessage: e.toString().replaceFirst('Exception: ', ''),
+        errorMessage: errorMsg,
       );
       return false;
     }

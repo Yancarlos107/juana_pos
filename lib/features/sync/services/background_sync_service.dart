@@ -12,6 +12,7 @@ import '../../../core/database/database_helper.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/storage/local_storage_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/utils/device_utils.dart';
 
 final backgroundSyncProvider = Provider<BackgroundSyncService>((ref) {
   final dio = ref.watch(dioProvider);
@@ -55,8 +56,10 @@ class BackgroundSyncService {
 
   Future<void> _syncTransactions() async {
     final db = await DatabaseHelper.instance.database;
-    final pending = await db
-        .query('transactions', where: 'status = ?', whereArgs: ['pending']);
+    final pending = await db.query(
+      'transactions',
+      where: "status = 'pending' OR (status = 'synced' AND (server_id IS NULL OR server_id = ''))"
+    );
 
     if (pending.isEmpty) return;
 
@@ -67,7 +70,8 @@ class BackgroundSyncService {
       final pendingSales = pending
           .where((tx) =>
               tx['product_id'] != 'CIERRE DE CAJA' &&
-              tx['product_id'] != 'APERTURA DE CAJA')
+              tx['product_id'] != 'APERTURA DE CAJA' &&
+              tx['product_id'] != 'PMR')
           .toList();
       final pendingClosures =
           pending.where((tx) => tx['product_id'] == 'CIERRE DE CAJA').toList();
@@ -75,8 +79,9 @@ class BackgroundSyncService {
           .where((tx) => tx['product_id'] == 'APERTURA DE CAJA')
           .toList();
 
-      // Obtener el ID de la ubicación POS
+      // Obtener el ID de la ubicación POS y el hash del dispositivo
       final posLocationId = await _storage.getPosLocationId();
+      final deviceHash = await _storage.getDeviceHash();
 
       // Agrupar ventas por cashier_id
       Map<int, List<Map<String, dynamic>>> salesByCashier = {};
@@ -106,6 +111,7 @@ class BackgroundSyncService {
 
           try {
             final List<Map<String, dynamic>> tokens = chunk.map((tx) {
+              final serialNumber = tx['serial_number']?.toString() ?? 'N/A';
               return {
                 "qr": tx['qr_data'],
                 "cashierid": tx[
@@ -114,13 +120,15 @@ class BackgroundSyncService {
                 "fareid": 1,
                 "productid": tx['product_id'],
                 "transaction_id": tx['id'],
+                "serial_number": serialNumber,
                 "pos_location_id": tx['pos_location_id'] ?? posLocationId,
                 "versionid": 1,
                 "lat": "0.0",
                 "lon": "0.0",
                 "hw": deviceInfo['hw'],
                 "ime": deviceInfo['ime'],
-                "plot_id": _generatePlotId(),
+                "mac_address": tx['mac_address'],
+                "plot_id": tx['plot_id'] ?? _generatePlotId(),
                 "type_code": "RC173",
                 "datetime": DateTime.parse(tx['created_at'].toString())
                         .millisecondsSinceEpoch ~/
@@ -146,15 +154,6 @@ class BackgroundSyncService {
             print('DEBUG: [RC173] Payload a enviar:');
             print(jsonEncode(payload));
 
-            scaffoldMessengerKey.currentState?.showSnackBar(
-              SnackBar(
-                content: Text(
-                    'Enviando bloque de ${chunk.length} ventas (RC173)...'),
-                backgroundColor: Colors.blueAccent,
-                duration: const Duration(seconds: 2),
-              ),
-            );
-
             // Endpoint de transacciones
             final response = await _dio.post(
               '/pos-transactions/rc173',
@@ -167,26 +166,46 @@ class BackgroundSyncService {
             if (response.statusCode == 200 ||
                 response.statusCode == 201 ||
                 response.statusCode == 409) {
+              
+              final responseData = response.data;
+              List<dynamic> qrCodes = [];
+              int? posTransactionId;
+              
+              if (responseData is Map && responseData['success'] == true) {
+                final dataObj = responseData['data'];
+                if (dataObj is Map) {
+                  qrCodes = dataObj['qr_codes'] ?? [];
+                  posTransactionId = dataObj['pos_transaction_id'];
+                }
+              }
+
               final batch = db.batch();
+              int updatedCount = 0;
               for (final tx in chunk) {
-                batch.update('transactions', {'status': 'synced'},
-                    where: 'local_id = ?', whereArgs: [tx['local_id']]);
+                // Solo marcamos como synced si el servidor explícitamente nos devolvió su QR
+                // o si es un 409 sin lista (fallback de que ya existía)
+                if (qrCodes.contains(tx['qr_data']) || (response.statusCode == 409 && qrCodes.isEmpty)) {
+                  // Solo lo marcamos como synced si TENEMOS el server_id
+                  if (posTransactionId != null) {
+                    batch.update('transactions', {
+                        'status': 'synced',
+                        'server_id': posTransactionId,
+                      },
+                      where: 'local_id = ?', whereArgs: [tx['local_id']]);
+                    updatedCount++;
+                  } else {
+                    // Si no hay server_id, lo dejamos como pending (o no lo actualizamos para que se reenvíe)
+                    print('DEBUG: Se omitió marcar como synced la tx local_id ${tx['local_id']} porque server_id es nulo.');
+                  }
+                }
               }
               await batch.commit(noResult: true);
+              
               _ref
                   .read(systemStatusProvider.notifier)
                   .forceCheckPendingTransactions();
               print(
-                  'DEBUG: Bloque de ${chunk.length} ventas offline sincronizadas masivamente (RC173).');
-
-              scaffoldMessengerKey.currentState?.showSnackBar(
-                SnackBar(
-                  content: Text(
-                      '${chunk.length} Ventas offline sincronizadas (RC173)'),
-                  backgroundColor: Colors.green,
-                  duration: const Duration(seconds: 3),
-                ),
-              );
+                  'DEBUG: Bloque RC173 enviado. Servidor confirmó $updatedCount de ${chunk.length} ventas.');
             } else {
               String errorMsg = 'Código ${response.statusCode}';
               if (response.data is Map && response.data.containsKey('errors')) {
@@ -200,14 +219,6 @@ class BackgroundSyncService {
 
               print(
                   'DEBUG: Fallo en bloque RC173, status ${response.statusCode}. Msg: $errorMsg');
-
-              scaffoldMessengerKey.currentState?.showSnackBar(
-                SnackBar(
-                  content: Text('Error RC173: $errorMsg'),
-                  backgroundColor: Colors.red,
-                  duration: const Duration(seconds: 5),
-                ),
-              );
               break;
             }
           } catch (e) {
@@ -228,14 +239,6 @@ class BackgroundSyncService {
             }
             print(
                 'DEBUG: Fallo al sincronizar bloque RC173: $errorMessage. Abortando siguientes bloques.');
-
-            scaffoldMessengerKey.currentState?.showSnackBar(
-              SnackBar(
-                content: Text('Fallo RC173: $errorMessage'),
-                backgroundColor: Colors.red,
-                duration: const Duration(seconds: 5),
-              ),
-            );
             break;
           }
         }
@@ -270,21 +273,51 @@ class BackgroundSyncService {
               ? (userQuery.first['name'] as String? ?? "Cajero")
               : "Cajero";
 
-          final List<Map<String, dynamic>> tokenArr = [
-            {
-              "qr": tx['qr_data'],
-              "cashierid": txCashierId,
-              "expiredtime": 60,
-              "fareid": 1,
-              "productid": "CIERRE DE CAJA",
-              "transaction_id": tx['id'],
-              "pos_location_id": tx['pos_location_id'],
-              "versionid": 1,
-              "datetime": DateTime.parse(tx['created_at'].toString())
-                      .millisecondsSinceEpoch ~/
-                  1000
+          // Extraer datos del QR
+          Map<String, dynamic>? extraData;
+          try {
+            if (tx['qr_data'] != null) {
+              final decodedStr = utf8.decode(base64Decode(tx['qr_data']));
+              extraData = jsonDecode(decodedStr);
             }
-          ];
+          } catch (e) {
+            print("DEBUG: Error decoding qr_data for RC172: $e");
+          }
+
+          final Map<String, dynamic> tokenObj = {
+            "qr": tx['qr_data'],
+            "cashierid": txCashierId,
+            "expiredtime": 60,
+            "fareid": 1,
+            "productid": "CIERRE DE CAJA",
+            "transaction_id": tx['id'],
+            "pos_location_id": tx['pos_location_id'],
+            "versionid": 1,
+            "mac_address": tx['mac_address'],
+            "datetime": DateTime.parse(tx['created_at'].toString())
+                    .millisecondsSinceEpoch ~/
+                1000
+          };
+
+          if (extraData != null) {
+            if (extraData.containsKey('cash_list')) {
+              tokenObj['cash_list'] = extraData['cash_list'];
+            }
+            if (extraData.containsKey('coins_total')) {
+              tokenObj['coins_total'] = extraData['coins_total'];
+            }
+            if (extraData.containsKey('bills_total')) {
+              tokenObj['bills_total'] = extraData['bills_total'];
+            }
+            if (extraData.containsKey('cash')) {
+              tokenObj['cash'] = extraData['cash'];
+            }
+            if (extraData.containsKey('balance')) {
+              tokenObj['balance'] = extraData['balance'];
+            }
+          }
+
+          final List<Map<String, dynamic>> tokenArr = [tokenObj];
 
           final payload = {
             "plot_id": _generatePlotId(),
@@ -303,13 +336,7 @@ class BackgroundSyncService {
           };
 
           try {
-            scaffoldMessengerKey.currentState?.showSnackBar(
-              const SnackBar(
-                content: Text('Enviando cierre de caja (RC172)...'),
-                backgroundColor: Colors.blueAccent,
-                duration: Duration(seconds: 2),
-              ),
-            );
+
 
             final response = await _dio.post(
               '/pos-transactions',
@@ -321,44 +348,35 @@ class BackgroundSyncService {
             if (response.statusCode == 200 ||
                 response.statusCode == 201 ||
                 response.statusCode == 409) {
-              await db.update('transactions', {'status': 'synced'},
+                
+              int? posTransactionId;
+              final responseData = response.data;
+              if (responseData is Map && responseData['success'] == true) {
+                final dataObj = responseData['data'];
+                if (dataObj is Map) {
+                  posTransactionId = dataObj['pos_transaction_id'];
+                }
+              }
+
+              final updateData = <String, dynamic>{'status': 'synced'};
+              if (posTransactionId != null) {
+                updateData['server_id'] = posTransactionId;
+              }
+
+              await db.update('transactions', updateData,
                   where: 'local_id = ?', whereArgs: [tx['local_id']]);
               _ref
                   .read(systemStatusProvider.notifier)
                   .forceCheckPendingTransactions();
               print(
                   'DEBUG: Cierre offline sincronizado individualmente (RC172).');
-              scaffoldMessengerKey.currentState?.showSnackBar(
-                SnackBar(
-                  content: Text(response.statusCode == 409
-                      ? 'Cierre ya existía en servidor (RC172)'
-                      : 'Cierre offline sincronizado (RC172)'),
-                  backgroundColor:
-                      response.statusCode == 409 ? Colors.orange : Colors.green,
-                  duration: const Duration(seconds: 3),
-                ),
-              );
             } else {
               print(
                   'DEBUG: Fallo al sincronizar Cierre de Caja (RC172) $txId: ${response.statusCode}');
-              scaffoldMessengerKey.currentState?.showSnackBar(
-                SnackBar(
-                  content: Text('Error RC172: Código ${response.statusCode}'),
-                  backgroundColor: Colors.red,
-                  duration: const Duration(seconds: 5),
-                ),
-              );
             }
           } catch (e) {
             print(
                 'DEBUG: Fallo al sincronizar Cierre de Caja (RC172) $txId: $e');
-            scaffoldMessengerKey.currentState?.showSnackBar(
-              SnackBar(
-                content: Text('Fallo RC172: $e'),
-                backgroundColor: Colors.red,
-                duration: const Duration(seconds: 5),
-              ),
-            );
           }
         }
       }
@@ -403,46 +421,35 @@ class BackgroundSyncService {
           if (response.statusCode == 200 ||
               response.statusCode == 201 ||
               response.statusCode == 409) {
-            await db.update('transactions', {'status': 'synced'},
+
+            int? posTransactionId;
+            final responseData = response.data;
+            if (responseData is Map && responseData['success'] == true) {
+              final dataObj = responseData['data'];
+              if (dataObj is Map) {
+                posTransactionId = dataObj['pos_transaction_id'];
+              }
+            }
+
+            final updateData = <String, dynamic>{'status': 'synced'};
+            if (posTransactionId != null) {
+              updateData['server_id'] = posTransactionId;
+            }
+
+            await db.update('transactions', updateData,
                 where: 'id = ?', whereArgs: [txId]);
             print(
                 'DEBUG: Apertura de Caja (RC174) sincronizada con éxito (o ya existía 409): $txId');
-
-            scaffoldMessengerKey.currentState?.showSnackBar(
-              SnackBar(
-                content: Text(response.statusCode == 409
-                    ? 'Caja ya estaba abierta en servidor (RC174)'
-                    : 'Apertura offline sincronizada (RC174)'),
-                backgroundColor:
-                    response.statusCode == 409 ? Colors.orange : Colors.green,
-                duration: const Duration(seconds: 3),
-              ),
-            );
             _ref
                 .read(systemStatusProvider.notifier)
                 .forceCheckPendingTransactions();
           } else {
             print(
                 'DEBUG: Error al sincronizar Apertura de Caja (RC174) $txId: ${response.statusCode}');
-            scaffoldMessengerKey.currentState?.showSnackBar(
-              SnackBar(
-                content: Text(
-                    'Error al enviar RC174: Código ${response.statusCode}'),
-                backgroundColor: Colors.red,
-                duration: const Duration(seconds: 5),
-              ),
-            );
           }
         } catch (e) {
           print(
               'DEBUG: Fallo al sincronizar Apertura de Caja (RC174) $txId: $e');
-          scaffoldMessengerKey.currentState?.showSnackBar(
-            SnackBar(
-              content: Text('Fallo RC174: $e'),
-              backgroundColor: Colors.red,
-              duration: const Duration(seconds: 5),
-            ),
-          );
         }
       }
     } catch (e) {
@@ -450,25 +457,7 @@ class BackgroundSyncService {
     }
   }
 
-  Future<String?> _getMacAddress() async {
-    try {
-      final wlanFile = File('/sys/class/net/wlan0/address');
-      if (await wlanFile.exists()) {
-        final mac = await wlanFile.readAsString();
-        if (mac.trim().isNotEmpty && mac.trim() != '02:00:00:00:00:00') {
-          return mac.trim().toUpperCase();
-        }
-      }
-      final ethFile = File('/sys/class/net/eth0/address');
-      if (await ethFile.exists()) {
-        final mac = await ethFile.readAsString();
-        if (mac.trim().isNotEmpty && mac.trim() != '02:00:00:00:00:00') {
-          return mac.trim().toUpperCase();
-        }
-      }
-    } catch (_) {}
-    return null;
-  }
+
 
   Future<String> _getPersistentUuid() async {
     final prefs = await SharedPreferences.getInstance();
@@ -494,8 +483,8 @@ class BackgroundSyncService {
         final build = await deviceInfoPlugin.androidInfo;
         hw = build.model;
 
-        // 1. Intentar obtener MAC address real de Telpo
-        final macAddress = await _getMacAddress();
+        // 1. Intentar obtener MAC address real de Telpo o fallback a serial
+        final macAddress = await DeviceUtils.getMacAddress();
 
         if (macAddress != null) {
           ime = macAddress;

@@ -1,6 +1,9 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:io';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
+import 'dart:math' as math;
 import 'package:device_info_plus/device_info_plus.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../core/network/dio_client.dart';
@@ -97,7 +100,7 @@ class ClosureService {
       if (sessionQuery.isNotEmpty) {
         sessionId = sessionQuery.first['id'] as int;
         
-        final result = await db.rawQuery('SELECT SUM(amount) as total FROM transactions WHERE session_id = ? AND product_id != ?', [sessionId, 'CIERRE DE CAJA']);
+        final result = await db.rawQuery('SELECT SUM(amount) as total FROM transactions WHERE session_id = ? AND product_id != ? AND product_id != ?', [sessionId, 'CIERRE DE CAJA', 'APERTURA DE CAJA']);
         if (result.isNotEmpty && result.first['total'] != null) {
           totalAmount = (result.first['total'] as num).toDouble();
         }
@@ -105,8 +108,8 @@ class ClosureService {
         // Obtener todas las transacciones de esta sesión
         final txs = await db.query(
           'transactions',
-          where: 'session_id = ? AND qr_data IS NOT NULL AND qr_data != ?',
-          whereArgs: [sessionId, 'PMR_MANUAL']
+          where: 'session_id = ? AND qr_data IS NOT NULL AND qr_data != ? AND product_id != ? AND product_id != ?',
+          whereArgs: [sessionId, 'PMR_MANUAL', 'CIERRE DE CAJA', 'APERTURA DE CAJA']
         );
         
         hexTokens = txs
@@ -154,13 +157,11 @@ class ClosureService {
           whereArgs: [sessionId],
         );
 
-        // También marcamos las transacciones como sincronizadas para que BackgroundSync no las repita
-        await db.update(
-          'transactions',
-          {'status': 'synced'},
-          where: 'session_id = ? AND status = ?',
-          whereArgs: [sessionId, 'pending'],
-        );
+        // ELIMINADO: Ya no forzamos el status a 'synced' para que RC173 pueda procesarlas.
+
+        final random = math.Random();
+        final plotIdBytes = List<int>.generate(16, (i) => random.nextInt(256));
+        final plotId = md5.convert(plotIdBytes).toString();
 
         // Insertar operación de cierre en el historial
         await db.insert('transactions', {
@@ -173,6 +174,7 @@ class ClosureService {
           'status': 'synced',
           'created_at': DateTime.now().toIso8601String(),
           'qr_data': 'CIERRE',
+          'plot_id': plotId,
         });
       }
 

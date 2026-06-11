@@ -140,34 +140,11 @@ class MainActivity : FlutterActivity() {
                 var transferred = -1
                 var activeIface: android.hardware.usb.UsbInterface? = null
                 
+                /*
+                // INTENTO DE FIX (Retirado temporalmente por inestabilidad)
                 try {
                     outer@ for (i in 0 until device.interfaceCount) {
-                        val iface = device.getInterface(i)
-                        log("  Interfaz $i: clase=${iface.interfaceClass} endpoints=${iface.endpointCount}")
-
-                        if (!connection.claimInterface(iface, true)) {
-                            log("  -> claimInterface($i) falló, saltando")
-                            continue
-                        }
-                        
-                        activeIface = iface
-
-                        for (j in 0 until iface.endpointCount) {
-                            val ep = iface.getEndpoint(j)
-                            log("    Endpoint $j: tipo=${ep.type} dir=${ep.direction}")
-
-                            if (ep.type == UsbConstants.USB_ENDPOINT_XFER_BULK &&
-                                ep.direction == UsbConstants.USB_DIR_OUT) {
-
-                                log("    -> Endpoint bulk OUT encontrado. Enviando ${bytes.size} bytes...")
-                                transferred = connection.bulkTransfer(ep, bytes, bytes.size, 8000)
-                                log("    -> bulkTransfer resultado: $transferred")
-                                break@outer
-                            }
-                        }
-                        // Si llegamos aquí sin encontrar el endpoint, soltamos la interfaz actual
-                        connection.releaseInterface(iface)
-                        activeIface = null
+                        ...
                     }
                 } finally {
                     if (activeIface != null) {
@@ -176,6 +153,36 @@ class MainActivity : FlutterActivity() {
                     connection.close()
                     log("Conexión USB cerrada y limpiada correctamente en el bloque finally.")
                 }
+                */
+
+                // Lógica original de transferencia (Sin el bloque finally estricto)
+                outer@ for (i in 0 until device.interfaceCount) {
+                    val iface = device.getInterface(i)
+                    log("  Interfaz $i: clase=${iface.interfaceClass} endpoints=${iface.endpointCount}")
+
+                    if (!connection.claimInterface(iface, true)) {
+                        log("  -> claimInterface($i) falló, saltando")
+                        continue
+                    }
+                    
+                    for (j in 0 until iface.endpointCount) {
+                        val ep = iface.getEndpoint(j)
+                        log("    Endpoint $j: tipo=${ep.type} dir=${ep.direction}")
+
+                        if (ep.type == UsbConstants.USB_ENDPOINT_XFER_BULK &&
+                            ep.direction == UsbConstants.USB_DIR_OUT) {
+
+                            log("    -> Endpoint bulk OUT encontrado. Enviando ${bytes.size} bytes...")
+                            transferred = connection.bulkTransfer(ep, bytes, bytes.size, 8000)
+                            log("    -> bulkTransfer resultado: $transferred")
+                            connection.releaseInterface(iface)
+                            break@outer
+                        }
+                    }
+                    connection.releaseInterface(iface)
+                }
+
+                connection.close()
 
                 if (transferred >= 0) {
                     log("EXITO: $transferred bytes transferidos")

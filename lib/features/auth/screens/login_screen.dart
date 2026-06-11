@@ -12,9 +12,14 @@ import '../../monitoring/services/system_status_service.dart';
 import '../../../core/network/dio_client.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'package:crypto/crypto.dart';
+import 'dart:math' as math;
 import 'package:path_provider/path_provider.dart';
 import 'package:app_settings/app_settings.dart';
 import '../../../core/widgets/kiosk_logo_button.dart';
+import '../../../core/utils/currency_formatter.dart';
+import '../../../core/constants/api_constants.dart';
+
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -82,9 +87,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator(color: Color(0xFF6642F8))),
+      builder: (_) => const Center(
+          child: CircularProgressIndicator(color: Color(0xFF6642F8))),
     );
-    
+
     try {
       final db = await DatabaseHelper.instance.database;
       final result = await db.rawQuery('''
@@ -94,35 +100,40 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           SUM(t.amount) as pending_amount
         FROM transactions t
         LEFT JOIN users u ON t.cashier_id = u.id
-        WHERE t.is_closed = 0 AND t.product_id != 'CIERRE DE CAJA'
+        WHERE t.is_closed = 0 AND t.product_id != 'CIERRE DE CAJA' AND t.product_id != 'APERTURA DE CAJA'
         GROUP BY t.cashier_id
         HAVING pending_count > 0
       ''');
-      
+
       if (mounted) Navigator.pop(context); // quitar loader
-      
+
       if (result.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('La caja está limpia. Ningún usuario tiene ventas pendientes de cierre.'),
+            content: Text(
+                'La caja está limpia. Ningún usuario tiene ventas pendientes de cierre.'),
             backgroundColor: Colors.green,
           ));
         }
         return;
       }
-      
+
       if (mounted) {
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: const Row(
               children: [
-                Icon(Icons.account_balance_wallet_rounded, color: Colors.orange, size: 28),
+                Icon(Icons.account_balance_wallet_rounded,
+                    color: Colors.orange, size: 28),
                 SizedBox(width: 12),
-                Text('Ventas Pendientes por Usuario', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+                Text('Ventas Pendientes por Usuario',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
               ],
             ),
             content: SizedBox(
@@ -135,13 +146,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   final row = result[i];
                   final name = row['name']?.toString() ?? 'Cajero Desconocido';
                   final count = row['pending_count'] as int? ?? 0;
-                  final amount = (row['pending_amount'] as num?)?.toDouble() ?? 0;
+                  final amount =
+                      (row['pending_amount'] as num?)?.toDouble() ?? 0;
                   return ListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF3F3D56))),
+                    title: Text(name,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                            color: Color(0xFF3F3D56))),
                     subtitle: Text('Ventas sin cerrar: $count'),
-                    trailing: Text('\$${amount.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}', 
-                      style: const TextStyle(color: Color(0xFF6642F8), fontWeight: FontWeight.bold, fontSize: 18)),
+                    trailing: Text(
+                        '\$${amount.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                            color: Color(0xFF6642F8),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18)),
                   );
                 },
               ),
@@ -149,7 +169,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text('ENTENDIDO', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                child: const Text('ENTENDIDO',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               ),
             ],
           ),
@@ -180,10 +202,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           if (permission == LocationPermission.denied) {
             permission = await Geolocator.requestPermission();
           }
-          if (permission == LocationPermission.whileInUse || permission == LocationPermission.always) {
-            Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium);
-            await ref.read(localStorageProvider).saveGpsLocation(position.latitude, position.longitude);
-            print('DEBUG: GPS capturado en login: ${position.latitude}, ${position.longitude}');
+          if (permission == LocationPermission.whileInUse ||
+              permission == LocationPermission.always) {
+            Position position = await Geolocator.getCurrentPosition(
+                desiredAccuracy: LocationAccuracy.medium);
+            await ref
+                .read(localStorageProvider)
+                .saveGpsLocation(position.latitude, position.longitude);
+            print(
+                'DEBUG: GPS capturado en login: ${position.latitude}, ${position.longitude}');
           }
         }
       } catch (e) {
@@ -202,12 +229,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           // 4. Guardamos la transacción offline de Apertura de Caja para que se sincronice en la RC171
           try {
             final db = await DatabaseHelper.instance.database;
-            final posLocationId = await ref.read(localStorageProvider).getPosLocationId();
-            final gpsData = await ref.read(localStorageProvider).getGpsLocation();
+            final posLocationId =
+                await ref.read(localStorageProvider).getPosLocationId();
+            final gpsData =
+                await ref.read(localStorageProvider).getGpsLocation();
             final cashierId = authState.user?.id ?? 1;
-            
+
+            final random = math.Random();
+            final plotIdBytes = List<int>.generate(16, (i) => random.nextInt(256));
+            final plotId = md5.convert(plotIdBytes).toString();
+
             await db.insert('transactions', {
-              'id': 'open-${DateTime.now().microsecondsSinceEpoch}-$posLocationId',
+              'id':
+                  'open-${DateTime.now().microsecondsSinceEpoch}-$posLocationId',
               'session_id': null,
               'cashier_id': cashierId,
               'pos_location_id': posLocationId,
@@ -220,8 +254,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               'print_status': 0,
               'lat': gpsData?['lat'],
               'lon': gpsData?['lon'],
+              'plot_id': plotId,
             });
-            print('DEBUG: Transacción de APERTURA DE CAJA guardada localmente para desencole (RC174).');
+            print(
+                'DEBUG: Transacción de APERTURA DE CAJA guardada localmente para desencole (RC174).');
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
@@ -255,7 +291,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Ingresa tu usuario y contraseña para autorizar la impresión', style: TextStyle(fontWeight: FontWeight.bold)),
+          content: Text(
+              'Ingresa tu usuario y contraseña para autorizar la impresión',
+              style: TextStyle(fontWeight: FontWeight.bold)),
           backgroundColor: Colors.orange,
         ),
       );
@@ -298,7 +336,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Credenciales incorrectas o sin red', style: TextStyle(fontWeight: FontWeight.bold)),
+            content: Text('Credenciales incorrectas o sin red',
+                style: TextStyle(fontWeight: FontWeight.bold)),
             backgroundColor: Colors.red,
           ),
         );
@@ -357,7 +396,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(success ? '¡Cierre impreso exitosamente!' : errorMessage),
+          content:
+              Text(success ? '¡Cierre impreso exitosamente!' : errorMessage),
           backgroundColor: success ? Colors.green : Colors.red,
           duration: const Duration(seconds: 4),
         ),
@@ -369,7 +409,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Opciones de Soporte', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Opciones de Soporte',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         content: const Text('Seleccione una opción de soporte administrativo:'),
         actions: [
           TextButton(
@@ -384,7 +425,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               Navigator.pop(ctx);
               _exportTransactions();
             },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6642F8), foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6642F8),
+                foregroundColor: Colors.white),
             child: const Text('Exportar Tramas a TXT'),
           ),
         ],
@@ -401,23 +444,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       final db = await DatabaseHelper.instance.database;
       final txs = await db.query('transactions');
-      
-      // Intentar guardar en la carpeta de Descargas pública de Android
-      String basePath = '/storage/emulated/0/Download';
-      File file = File('$basePath/tramas_exportadas.txt');
-      
-      try {
-        // Intentar escribir al archivo para probar permisos
-        if (!await file.exists()) {
-          await file.create(recursive: true);
-        }
-      } catch (e) {
-        // Fallback a la carpeta de la app si hay error de permisos
-        final appDir = await getApplicationDocumentsDirectory();
-        basePath = appDir.path;
-        file = File('$basePath/tramas_exportadas.txt');
-      }
-      
+
+      final dir = await getExternalStorageDirectory() ??
+          await getApplicationDocumentsDirectory();
       final sb = StringBuffer();
       sb.writeln('=== EXPORTACIÓN DE TRAMAS ===');
       sb.writeln('Fecha: ${DateTime.now().toIso8601String()}');
@@ -428,15 +457,70 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         sb.writeln(jsonEncode(tx));
       }
       
-      await file.writeAsString(sb.toString());
+      File? file;
+      String finalPath = '';
+      
+      try {
+        // Opción 1: Carpeta de descargas pública
+        final Directory downDir = Directory('/storage/emulated/0/Download');
+        if (downDir.existsSync()) {
+          file = File('${downDir.path}/tramas_exportadas.txt');
+          await file.writeAsString(sb.toString());
+          finalPath = file.path;
+        } else {
+          throw Exception('Download no existe');
+        }
+      } catch (e) {
+        // Opción 2: Carpeta pública de la app en Android/data/ (Visible al conectar por USB o gestores de archivos)
+        try {
+          final extDir = await getExternalStorageDirectory();
+          if (extDir != null) {
+            file = File('${extDir.path}/tramas_exportadas.txt');
+            await file.writeAsString(sb.toString());
+            finalPath = file.path;
+          } else {
+            throw Exception('Directorio externo no disponible');
+          }
+        } catch (e2) {
+          // Opción 3: Carpeta interna estricta (invisible sin root)
+          final appDir = await getApplicationDocumentsDirectory();
+          file = File('${appDir.path}/tramas_exportadas.txt');
+          await file.writeAsString(sb.toString());
+          finalPath = file.path;
+        }
+      }
       
       if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Archivo guardado en:\\n${file.path}', style: const TextStyle(fontWeight: FontWeight.bold)),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 10),
-        ));
+        Navigator.pop(context); // Cerrar loader
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Tramas Guardadas'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Archivo guardado en:', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    SelectableText(finalPath, style: const TextStyle(color: Colors.blue)),
+                    const SizedBox(height: 10),
+                    const Divider(),
+                    const Text('Contenido:'),
+                    const SizedBox(height: 10),
+                    SelectableText(sb.toString()),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('CERRAR'),
+              )
+            ],
+          )
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -572,7 +656,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           const Text(
             'Inicia sesión con tu código',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey, fontSize: 18), // Aumentado de 15 a 18
+            style: TextStyle(
+                color: Colors.grey, fontSize: 18), // Aumentado de 15 a 18
           ),
           const SizedBox(height: 36),
           TextFormField(
@@ -611,7 +696,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             obscureText: _obscurePassword,
             onTap: () =>
                 setState(() => _activeController = _passwordController),
-            style: const TextStyle(fontSize: 24, letterSpacing: 8, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+                fontSize: 24, letterSpacing: 8, fontWeight: FontWeight.bold),
             decoration: InputDecoration(
               labelText: 'Contraseña',
               prefixIcon: const Icon(Icons.lock_outline),
@@ -665,8 +751,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         actions: [
           IconButton(
             onPressed: _showPendingSalesModal,
-            tooltip: _hasUnclosedSales 
-                ? 'Ver ventas pendientes de cierre' 
+            tooltip: _hasUnclosedSales
+                ? 'Ver ventas pendientes de cierre'
                 : 'No hay ventas pendientes',
             icon: Icon(
               Icons.account_balance_wallet_rounded,
@@ -676,25 +762,33 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
           const SizedBox(width: 16),
           Icon(Icons.accessible_rounded,
-              color: systemStatus.isPmrConnected ? Colors.green : Colors.redAccent,
+              color:
+                  systemStatus.isPmrConnected ? Colors.green : Colors.redAccent,
               size: 40),
           const SizedBox(width: 16),
           Icon(Icons.camera_alt_rounded,
-              color: systemStatus.isCameraConnected ? Colors.green : Colors.redAccent,
+              color: systemStatus.isCameraConnected
+                  ? Colors.green
+                  : Colors.redAccent,
               size: 40),
           const SizedBox(width: 16),
           Icon(Icons.print_rounded,
-              color: systemStatus.isPrinterConnected ? Colors.green : Colors.redAccent,
+              color: systemStatus.isPrinterConnected
+                  ? Colors.green
+                  : Colors.redAccent,
               size: 40),
           const SizedBox(width: 16),
           Icon(Icons.wifi_rounded,
-              color: systemStatus.isInternetConnected ? Colors.green : Colors.redAccent,
+              color: systemStatus.isInternetConnected
+                  ? Colors.green
+                  : Colors.redAccent,
               size: 40),
           const SizedBox(width: 16),
           if (systemStatus.pendingTransactions > 0)
             Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                     color: Colors.orange,
                     borderRadius: BorderRadius.circular(16)),
@@ -714,64 +808,79 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         tooltip: 'Imprimir último cierre',
         child: const Icon(Icons.point_of_sale_rounded, color: Colors.white),
       ),
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            if (constraints.maxWidth > 800) {
-              // Pantalla grande: Mostrar en dos columnas (Row)
-              return Center(
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 48, vertical: 24),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        flex: 5,
-                        child: SingleChildScrollView(
-                          child: Padding(
-                            padding: const EdgeInsets.only(right: 32),
-                            child: _buildForm(),
-                          ),
-                        ),
-                      ),
-                      Container(
-                          width: 1, height: 400, color: Colors.grey.shade200),
-                      Expanded(
-                        flex: 6,
-                        child: Center(
-                          child: SingleChildScrollView(
-                            child: Padding(
-                              padding: const EdgeInsets.only(left: 32),
-                              child: _buildNumPad(authState),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth > 800) {
+                  // Pantalla grande: Mostrar en dos columnas (Row)
+                  return Center(
+                    child: Padding(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 48, vertical: 24),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            flex: 5,
+                            child: SingleChildScrollView(
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 32),
+                                child: _buildForm(),
+                              ),
                             ),
                           ),
-                        ),
+                          Container(
+                              width: 1, height: 400, color: Colors.grey.shade200),
+                          Expanded(
+                            flex: 6,
+                            child: Center(
+                              child: SingleChildScrollView(
+                                child: Padding(
+                                  padding: const EdgeInsets.only(left: 32),
+                                  child: _buildNumPad(authState),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-              );
-            } else {
-              // Pantalla pequeña: Mostrar en una sola columna (Column)
-              return Center(
-                child: SingleChildScrollView(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildForm(),
-                      const SizedBox(height: 48),
-                      _buildNumPad(authState),
-                    ],
-                  ),
-                ),
-              );
-            }
-          },
-        ),
+                    ),
+                  );
+                } else {
+                  // Pantalla pequeña: Mostrar en una sola columna (Column)
+                  return Center(
+                    child: SingleChildScrollView(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _buildForm(),
+                          const SizedBox(height: 48),
+                          _buildNumPad(authState),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+              },
+            ),
+          ),
+          Positioned(
+            bottom: 16,
+            left: 16,
+            child: Text(
+              ApiConstants.displayVersion,
+              style: const TextStyle(
+                color: Colors.black54,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
