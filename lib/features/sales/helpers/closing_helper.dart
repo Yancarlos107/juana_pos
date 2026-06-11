@@ -112,11 +112,13 @@ class ClosingHelper {
       }
 
       final cashierName = ref.read(authProvider).user?.name ?? 'Operador';
+      final reviewerName = ref.read(reviewerNameProvider);
       
       final printResult = await ref.read(printerServiceProvider).printArqueoTicket(
         totalAmount: totalAmount,
         products: productList,
         cashierName: cashierName,
+        reviewerName: reviewerName,
       );
 
       if (context.mounted) Navigator.pop(context); // Cerrar loader

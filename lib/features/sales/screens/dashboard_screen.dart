@@ -716,8 +716,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       barrierDismissible: true,
       builder: (ctx) {
         return AlertDialog(
-          title: const Text('Acceso Restringido',
-              style: TextStyle(fontWeight: FontWeight.bold)),
+          title: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Acceso Restringido',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.of(ctx).pop(),
+              ),
+            ],
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -738,29 +747,50 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ],
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child:
-                  const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (pin == '1234') {
-                  Navigator.of(ctx).pop();
-                  setState(() => _currentIndex = 1);
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Contraseña incorrecta'),
-                      backgroundColor: Colors.red,
-                    ),
+            SizedBox(
+              width: double.infinity,
+              height: 55,
+              child: ElevatedButton(
+                onPressed: () async {
+                  if (pin.isEmpty) return;
+
+                  final db = await DatabaseHelper.instance.database;
+                  final results = await db.query(
+                    'users',
+                    where: 'is_reviewer = ? AND reviewer_code = ?',
+                    whereArgs: [1, pin],
+                    limit: 1,
                   );
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF6642F8)),
-              child: const Text('Ingresar',
-                  style: TextStyle(color: Colors.white)),
+
+                  if (!context.mounted) return;
+
+                  if (results.isNotEmpty) {
+                    final reviewerName = results.first['name'] as String?;
+                    ref.read(reviewerNameProvider.notifier).state =
+                        reviewerName;
+
+                    Navigator.of(ctx).pop();
+                    setState(() => _currentIndex = 1);
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Código de fiscalizador incorrecto'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6642F8),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Ingresar',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold)),
+              ),
             ),
           ],
         );

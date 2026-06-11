@@ -60,9 +60,11 @@ class InitService {
               'id': c['id'],
               'email': u['phone_number'], // Usamos phone_number como login id
               'password_hash': u['device_login_password'], // Contraseña hasheada (sha1)
-              'name': u['name'],
+              'name': c['name'] ?? u['name'],
               'branch_id': c['branch_id'],
               'roles': 'Cajero', // Rol por defecto offline
+              'is_reviewer': (c['is_reviewer'] == true || c['is_reviewer'] == 1) ? 1 : 0,
+              'reviewer_code': c['reviewer_code']?.toString(),
             }, conflictAlgorithm: ConflictAlgorithm.replace);
           }
         }

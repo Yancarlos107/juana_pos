@@ -132,3 +132,6 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   final storage = ref.read(localStorageProvider);
   return AuthNotifier(authService, sessionService, storage);
 });
+
+/// Proveedor que guarda el nombre del fiscalizador que desbloqueó la pestaña Recaudo
+final reviewerNameProvider = StateProvider<String?>((ref) => null);

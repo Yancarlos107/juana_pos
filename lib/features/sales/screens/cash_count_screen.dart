@@ -65,44 +65,64 @@ class _CashCountScreenState extends ConsumerState<CashCountScreen> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: const Text('Confirmar Cierre'),
-        content: Text(
-          '¿Estás seguro que deseas enviar el cierre por un valor de \$${currentTotal.toStringAsFixed(2)}?',
-          style: const TextStyle(fontSize: 16),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('Confirmar Cierre', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 24)),
+            IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () => Navigator.of(ctx).pop(),
+            ),
+          ],
+        ),
+        content: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          child: Text(
+            'Valor: \$${currentTotal.toStringAsFixed(2)} USD',
+            style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              
-              // balance = Efectivo Declarado - Total Sistema
-              final balance = currentTotal - totalSistema;
+          SizedBox(
+            width: double.infinity,
+            height: 75,
+            child: ElevatedButton(
+              onPressed: () async {
+                Navigator.of(ctx).pop();
+                
+                // balance = Efectivo Declarado - Total Sistema
+                final balance = currentTotal - totalSistema;
 
-              final coinsAmount = double.tryParse(_coinsController.text) ?? 0.0;
-              final billsAmount = double.tryParse(_billsController.text) ?? 0.0;
+                final coinsAmount = double.tryParse(_coinsController.text) ?? 0.0;
+                final billsAmount = double.tryParse(_billsController.text) ?? 0.0;
 
-              // En lugar de cashList, pasamos el resumen en un map temporal que enviaremos a la trama RC172
-              final Map<String, dynamic> cashList = {
-                "coins_total": coinsAmount,
-                "bills_total": billsAmount,
-                "cash": currentTotal
-              };
+                // En lugar de cashList, pasamos el resumen en un map temporal que enviaremos a la trama RC172
+                final Map<String, dynamic> cashList = {
+                  "coins_total": coinsAmount,
+                  "bills_total": billsAmount,
+                  "cash": currentTotal
+                };
 
-              await ClosingHelper.performArqueoClosing(
-                context, 
-                ref, 
-                cashList, // Adaptado para recibir el mapa nuevo
-                currentTotal, 
-                balance,
-                isLogout: true // SIEMPRE DEBE CERRAR SESIÓN AL ENVIAR CIERRE
-              );
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0066CC)),
-            child: const Text('Confirmar', style: TextStyle(color: Colors.white)),
+                await ClosingHelper.performArqueoClosing(
+                  context, 
+                  ref, 
+                  cashList, // Adaptado para recibir el mapa nuevo
+                  currentTotal, 
+                  balance,
+                  isLogout: true // SIEMPRE DEBE CERRAR SESIÓN AL ENVIAR CIERRE
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6642F8),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text('Confirmar', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            ),
           ),
         ],
       ),
