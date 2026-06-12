@@ -207,7 +207,12 @@ class MainActivity : FlutterActivity() {
     // -------------------------------------------------------------------------
 
     private fun findEpsonDevice(usbManager: UsbManager): UsbDevice? =
-        usbManager.deviceList.values.firstOrNull { it.vendorId == EPSON_VENDOR_ID }
+        usbManager.deviceList.values.firstOrNull { device ->
+            device.vendorId == EPSON_VENDOR_ID ||
+            (0 until device.interfaceCount).any { i ->
+                device.getInterface(i).interfaceClass == UsbConstants.USB_CLASS_PRINTER
+            }
+        }
 
     private fun isUsbDeviceConnected(targetVendorId: Int, targetProductId: Int): Boolean {
         return try {

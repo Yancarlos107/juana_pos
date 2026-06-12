@@ -51,7 +51,8 @@ class PrinterService {
   Future<bool> _isEpsonConnected() async {
     try {
       return await _platform.invokeMethod('isUsbDeviceConnected', {
-        'vendorId': 1208,
+        'vendorId':
+            -1, // -1 detecta tanto Epson como impresoras genéricas Clase 7
         'productId': -1,
       });
     } catch (_) {
@@ -93,7 +94,8 @@ class PrinterService {
       if (_lastVendorId != null) {
         final hardwareConnected = await checkHardwareConnection();
         if (!hardwareConnected) {
-          print('DEBUG: Impresora física desconectada. Purgando IDs guardados y forzando escaneo limpio.');
+          print(
+              'DEBUG: Impresora física desconectada. Purgando IDs guardados y forzando escaneo limpio.');
           _lastVendorId = null;
           _lastProductId = null;
         }
@@ -183,11 +185,21 @@ class PrinterService {
       bytes.addAll([0x1B, 0x45, 0x00]); // No Bold
 
       bytes.addAll(_text('QR TAMANO 4 (0x04):\n'));
-      bytes.addAll([0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]); // Model 2
+      bytes.addAll(
+          [0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]); // Model 2
       bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x04]); // Size 4
       bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]); // Lvl M
       final d4 = 'TEST-QR-SIZE-4'.codeUnits;
-      bytes.addAll([0x1D, 0x28, 0x6B, (d4.length + 3) & 0xFF, ((d4.length + 3) >> 8) & 0xFF, 0x31, 0x50, 0x30]);
+      bytes.addAll([
+        0x1D,
+        0x28,
+        0x6B,
+        (d4.length + 3) & 0xFF,
+        ((d4.length + 3) >> 8) & 0xFF,
+        0x31,
+        0x50,
+        0x30
+      ]);
       bytes.addAll(d4);
       bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]); // Print
       bytes.addAll(_text('\n\n'));
@@ -197,7 +209,16 @@ class PrinterService {
       bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x05]); // Size 5
       bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]);
       final d5 = 'TEST-QR-SIZE-5'.codeUnits;
-      bytes.addAll([0x1D, 0x28, 0x6B, (d5.length + 3) & 0xFF, ((d5.length + 3) >> 8) & 0xFF, 0x31, 0x50, 0x30]);
+      bytes.addAll([
+        0x1D,
+        0x28,
+        0x6B,
+        (d5.length + 3) & 0xFF,
+        ((d5.length + 3) >> 8) & 0xFF,
+        0x31,
+        0x50,
+        0x30
+      ]);
       bytes.addAll(d5);
       bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]);
       bytes.addAll(_text('\n\n'));
@@ -207,7 +228,16 @@ class PrinterService {
       bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x06]); // Size 6
       bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]);
       final d6 = 'TEST-QR-SIZE-6'.codeUnits;
-      bytes.addAll([0x1D, 0x28, 0x6B, (d6.length + 3) & 0xFF, ((d6.length + 3) >> 8) & 0xFF, 0x31, 0x50, 0x30]);
+      bytes.addAll([
+        0x1D,
+        0x28,
+        0x6B,
+        (d6.length + 3) & 0xFF,
+        ((d6.length + 3) >> 8) & 0xFF,
+        0x31,
+        0x50,
+        0x30
+      ]);
       bytes.addAll(d6);
       bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]);
       bytes.addAll(_text('\n\n'));
@@ -283,7 +313,6 @@ class PrinterService {
   }) async {
     print('DEBUG: Iniciando impresión de venta...');
     try {
-
       print('DEBUG: Generando bytes ESC/POS...');
       // Forzamos UTC-5 para Ecuador/Colombia
       final nowUtc = DateTime.now().toUtc();
@@ -302,7 +331,8 @@ class PrinterService {
       bytes.addAll(_text('Corredor Central Norte\n'));
 
       if (branchName != null && branchName.trim().isNotEmpty) {
-        bytes.addAll(_text('Estacion: ${branchName.trim().toUpperCase()} (ID: ${posLocationId ?? 0})\n'));
+        bytes.addAll(_text(
+            'Estacion: ${branchName.trim().toUpperCase()} (ID: ${posLocationId ?? 0})\n'));
       }
 
       if (isReprint) {
@@ -324,7 +354,7 @@ class PrinterService {
       // Se comenta el código QR temporalmente a solicitud del usuario
       // bytes.addAll(_cmdQrCode(qrData));
 
-      bytes.addAll([0x1B, 0x64, 0x01]);        // 1 salto
+      bytes.addAll([0x1B, 0x64, 0x01]); // 1 salto
       bytes.addAll([0x1D, 0x56, 0x42, 0x00]); // Cortar papel
 
       final epson = await _isEpsonConnected();
@@ -367,10 +397,12 @@ class PrinterService {
       bytes.addAll(_text('ARQUEO DE CAJA\n'));
       bytes.addAll([0x1D, 0x21, 0x00]); // Normal
       bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
-      
+
       final now = DateTime.now();
-      final dateStr = '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
-      final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+      final dateStr =
+          '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
+      final timeStr =
+          '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
       bytes.addAll(_text('Fecha Hora: $dateStr $timeStr\n\n'));
 
       // Detalle de productos
@@ -381,11 +413,12 @@ class PrinterService {
         bytes.addAll(_text('____ $qty x $name  ------ $total\n'));
       }
       bytes.addAll(_text('\n'));
-      
+
       bytes.addAll([0x1B, 0x45, 0x01]); // Bold
       bytes.addAll([0x1B, 0x61, 0x00]); // Izquierda
       bytes.addAll([0x1D, 0x21, 0x10]); // Doble ancho
-      bytes.addAll(_text('TOTAL SISTEMA : \$${CurrencyFormatter.format(totalAmount)}\n\n'));
+      bytes.addAll(
+          _text('TOTAL: \$${CurrencyFormatter.format(totalAmount)}\n\n'));
       bytes.addAll([0x1D, 0x21, 0x00]); // Normal
       bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
 
@@ -405,7 +438,7 @@ class PrinterService {
       bytes.addAll(_text('Nombre: $cashierName\n'));
       bytes.addAll(_text('Firma:_______________________\n\n\n\n'));
 
-      bytes.addAll([0x1B, 0x64, 0x01]);        // 1 salto
+      bytes.addAll([0x1B, 0x64, 0x01]); // 1 salto
       bytes.addAll([0x1D, 0x56, 0x42, 0x00]); // Cortar papel
 
       final epson = await _isEpsonConnected();
@@ -514,7 +547,6 @@ class PrinterService {
   }) async {
     print('DEBUG: Iniciando impresión de CIERRE (Conexión forzada)...');
     try {
-
       final bytes = <int>[];
       bytes.addAll([0x1B, 0x40]); // Init
       bytes.addAll([0x1B, 0x61, 0x00]); // Left (Justificado a la izquierda)
@@ -543,7 +575,7 @@ class PrinterService {
 
       bytes.addAll([0x1B, 0x61, 0x00]); // Left
       bytes.addAll(_text('Transacciones: $totalTransactions\n'));
-      bytes.addAll(_text('Reimpresiones: $reprintsCount\n\n')); 
+      bytes.addAll(_text('Reimpresiones: $reprintsCount\n\n'));
 
       bool isManualCash = false;
       double coinsTotal = 0.0;
@@ -552,7 +584,7 @@ class PrinterService {
       if (cashList is Map && cash != null) {
         coinsTotal = (cashList["coins_total"] as num?)?.toDouble() ?? 0.0;
         billsTotal = (cashList["bills_total"] as num?)?.toDouble() ?? 0.0;
-        
+
         isManualCash = (coinsTotal == 0.0 && billsTotal == 0.0);
       }
 
@@ -560,32 +592,36 @@ class PrinterService {
         bytes.addAll([0x1B, 0x45, 0x01]); // Bold
         bytes.addAll([0x1B, 0x61, 0x00]); // Left
         bytes.addAll([0x1D, 0x21, 0x10]); // Doble ancho
-        bytes.addAll(_text('TOTAL SISTEMA : \$${CurrencyFormatter.format(totalAmount)}\n\n'));
+        bytes.addAll(
+            _text('TOTAL: \$${CurrencyFormatter.format(totalAmount)}\n\n'));
         bytes.addAll([0x1D, 0x21, 0x00]); // Normal
         bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
       }
 
       if (cashList is Map && cash != null) {
         bytes.addAll([0x1B, 0x61, 0x00]); // Left
-        
+
         if (isManualCash) {
           bytes.addAll([0x1B, 0x45, 0x01]); // Bold on
           bytes.addAll(_text('DIGITE EFECTIVO:\n\n'));
           bytes.addAll([0x1B, 0x45, 0x00]); // Bold off
-          
+
           bytes.addAll(_text('Monedas: __________\n\n'));
           bytes.addAll(_text('Billetes: __________\n\n'));
           bytes.addAll(_text('Total: __________\n\n'));
         } else {
           bytes.addAll([0x1B, 0x45, 0x00]); // Bold off
-          bytes.addAll(_text('Monedas: \$${CurrencyFormatter.format(coinsTotal)}\n'));
-          bytes.addAll(_text('Billetes: \$${CurrencyFormatter.format(billsTotal)}\n'));
-          
+          bytes.addAll(
+              _text('Monedas: \$${CurrencyFormatter.format(coinsTotal)}\n'));
+          bytes.addAll(
+              _text('Billetes: \$${CurrencyFormatter.format(billsTotal)}\n'));
+
           bytes.addAll([0x1B, 0x45, 0x01]); // Bold on
           bytes.addAll([0x1D, 0x21, 0x11]); // x2 size
-          bytes.addAll(_text('\nEFECTIVO:\n\$${CurrencyFormatter.format(cash)}\n\n'));
+          bytes.addAll(
+              _text('\nEFECTIVO:\n\$${CurrencyFormatter.format(cash)}\n\n'));
         }
-        
+
         bytes.addAll([0x1B, 0x45, 0x00]); // Bold off
         bytes.addAll([0x1D, 0x21, 0x00]); // Normal size
       }
@@ -597,11 +633,13 @@ class PrinterService {
       }
 
       if (!isManualCash && balance != null && balance.abs() >= 0.01) {
-        if (balance < 0) { // Efectivo - Sistema = Negativo -> FALTANTE
+        if (balance < 0) {
+          // Efectivo - Sistema = Negativo -> FALTANTE
           bytes.addAll([0x1B, 0x61, 0x00]); // Left
           bytes.addAll([0x1B, 0x45, 0x01]); // Bold
           bytes.addAll([0x1D, 0x21, 0x00]); // Normal size
-          bytes.addAll(_text('FALTANTE: \$${CurrencyFormatter.format(balance.abs())}\n'));
+          bytes.addAll(_text(
+              'FALTANTE: \$${CurrencyFormatter.format(balance.abs())}\n'));
           bytes.addAll([0x1D, 0x21, 0x00]);
           bytes.addAll([0x1B, 0x45, 0x00]);
           bytes.addAll(_text('\n\n'));
@@ -617,10 +655,10 @@ class PrinterService {
         bytes.addAll([0x1B, 0x45, 0x00]); // No Bold
         bytes.addAll([0x1B, 0x61, 0x00]); // Left
         bytes.addAll(_text('------------------------------\n'));
-        
+
         final tTrans = daySummary['totalTransactions'] ?? 0;
         bytes.addAll(_text('Transacciones Totales: $tTrans\n\n'));
-        
+
         final List<String> dBreakdown = daySummary['breakdown'] ?? [];
         if (dBreakdown.isNotEmpty) {
           bytes.addAll([0x1B, 0x61, 0x00]); // Left
@@ -633,13 +671,18 @@ class PrinterService {
         final double dTotal = daySummary['totalAmount'] ?? 0.0;
         bytes.addAll([0x1B, 0x45, 0x01]); // Bold
         bytes.addAll([0x1D, 0x21, 0x10]); // Doble ancho
-        bytes.addAll(_text('TOTAL: \\\$${CurrencyFormatter.format(dTotal)}\n\n'));
+        bytes.addAll(
+            _text('TOTAL: \\\$${CurrencyFormatter.format(dTotal)}\n\n'));
         bytes.addAll([0x1D, 0x21, 0x00]); // Normal
         bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
         bytes.addAll(_text('------------------------------\n'));
       }
 
-      bytes.addAll([0x1B, 0x64, 0x04]); // Feed 4 lines para asegurar que salga del cabezal
+      bytes.addAll([
+        0x1B,
+        0x64,
+        0x04
+      ]); // Feed 4 lines para asegurar que salga del cabezal
       bytes.addAll([0x1D, 0x56, 0x42, 0x00]); // Cortar papel
 
       final epson = await _isEpsonConnected();

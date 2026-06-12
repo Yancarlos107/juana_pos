@@ -113,6 +113,7 @@ class ClosingHelper {
 
       final cashierName = ref.read(authProvider).user?.name ?? 'Operador';
       final reviewerName = ref.read(reviewerNameProvider);
+      if (context.mounted) Navigator.pop(context); // Cerrar loader ANTES para evitar deadlock de UI con UsbManager
       
       final printResult = await ref.read(printerServiceProvider).printArqueoTicket(
         totalAmount: totalAmount,
@@ -120,11 +121,13 @@ class ClosingHelper {
         cashierName: cashierName,
         reviewerName: reviewerName,
       );
-
-      if (context.mounted) Navigator.pop(context); // Cerrar loader
       
-      if (printResult == true && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Arqueo impreso con éxito.')));
+      if (context.mounted) {
+        if (printResult == true) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Arqueo impreso con éxito.')));
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Arqueo completado (sin impresión).')));
+        }
         Navigator.of(context).pushReplacementNamed('/dashboard');
       }
     } catch (e) {
@@ -470,10 +473,13 @@ class ClosingHelper {
     if (unclosedSales.isEmpty && !isArrastre) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('La caja está limpia. No hay ventas pendientes de cierre.'),
+            content: Text('La caja está limpia. No hay ventas para realizar el cierre.'),
             backgroundColor: Colors.orange));
+        Navigator.pop(context);
       }
-      if (isLogout) _executeLogout(context, ref);
+      if (isLogout) {
+        _executeLogout(context, ref);
+      }
       return;
     }
 
@@ -617,6 +623,8 @@ class ClosingHelper {
       };
     }
 
+    if (context.mounted) Navigator.pop(context); // Quitar loader ANTES de imprimir para evitar deadlock de UI
+
     final printer = ref.read(printerServiceProvider);
     final printResult = await printer.printClosingTicket(
       cashierName: cashierName,
@@ -642,12 +650,9 @@ class ClosingHelper {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Acepta el permiso USB e intenta el cierre de nuevo'),
           backgroundColor: Colors.orange));
-      Navigator.pop(context);
       return;
     }
     final printSuccess = printResult ?? false;
-
-    if (context.mounted) Navigator.pop(context); // Quitar loader
 
     try {
       final sessionQuery = await db.query('sessions', where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
