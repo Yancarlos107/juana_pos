@@ -467,7 +467,12 @@ class ClosingHelper {
       whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA']
     );
 
-    if (unclosedSales.isEmpty) {
+    if (unclosedSales.isEmpty && !isArrastre) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('La caja está limpia. No hay ventas pendientes de cierre.'),
+            backgroundColor: Colors.orange));
+      }
       if (isLogout) _executeLogout(context, ref);
       return;
     }
