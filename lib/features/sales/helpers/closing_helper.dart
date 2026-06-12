@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'dart:math' as math;
+import '../../../main.dart';
 import '../providers/sales_providers.dart';
 import '../../printer/services/printer_service.dart';
 import '../../auth/providers/auth_providers.dart';
@@ -128,8 +129,8 @@ class ClosingHelper {
         } else {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Arqueo completado (sin impresión).')));
         }
-        Navigator.of(context).pushReplacementNamed('/dashboard');
       }
+      navigatorKey.currentState?.pushNamedAndRemoveUntil('/dashboard', (route) => false);
     } catch (e) {
       if (context.mounted) {
         Navigator.pop(context);
@@ -714,8 +715,11 @@ class ClosingHelper {
   }
 
   static void _executeLogout(BuildContext context, WidgetRef ref) async {
+    final navContext = navigatorKey.currentContext ?? context;
+    if (!navContext.mounted) return;
+
     showDialog(
-        context: context,
+        context: navContext,
         barrierDismissible: false,
         builder: (ctx) => const Center(child: CircularProgressIndicator()));
         
@@ -724,9 +728,8 @@ class ClosingHelper {
     } catch (_) {}
 
     await ref.read(authProvider.notifier).logout();
-    if (context.mounted) {
-      Navigator.pop(context);
-      Navigator.of(context).pushReplacementNamed('/login');
-    }
+    
+    navigatorKey.currentState?.pop(); // close loader
+    navigatorKey.currentState?.pushNamedAndRemoveUntil('/login', (route) => false);
   }
 }
