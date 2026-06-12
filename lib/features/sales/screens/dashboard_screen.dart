@@ -20,6 +20,8 @@ import 'recaudo_screen.dart';
 import '../helpers/closing_helper.dart';
 import 'cash_count_screen.dart';
 import '../../../core/utils/print_log_helper.dart';
+import '../../../core/utils/device_utils.dart';
+import '../../../core/storage/local_storage_repository.dart';
 
 final dashboardCurrentIndexProvider = StateProvider<int>((ref) => 0);
 
@@ -703,8 +705,45 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
                   if (results.isNotEmpty) {
                     final reviewerName = results.first['name'] as String?;
+                    final reviewerId = results.first['id'] as int?;
                     ref.read(reviewerNameProvider.notifier).state =
                         reviewerName;
+
+                    try {
+                      final storage = ref.read(localStorageProvider);
+                      final posLocationId = await storage.getPosLocationId();
+                      final branchId = await storage.getBranchId() ?? 0;
+                      final sessionQuery = await db.query('sessions', where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
+                      final sessionId = sessionQuery.isNotEmpty ? sessionQuery.first['id'] : null;
+                      final gpsData = await storage.getGpsLocation();
+                      final macAddress = await DeviceUtils.getMacAddress();
+                      
+                      final localId = "OFF-RC171-${DateTime.now().microsecondsSinceEpoch}-$posLocationId";
+
+                      await db.insert('transactions', {
+                        'id': localId,
+                        'session_id': sessionId,
+                        'cashier_id': reviewerId ?? 1, // Guardamos el ID del fiscalizador
+                        'pos_location_id': posLocationId,
+                        'product_id': 'INGRESO_FISCALIZADOR',
+                        'amount': 0,
+                        'pmr': 0,
+                        'status': 'pending',
+                        'created_at': DateTime.now().toIso8601String(),
+                        'qr_data': null,
+                        'print_status': 2,
+                        'lat': gpsData?['lat'],
+                        'lon': gpsData?['lon'],
+                        'plot_id': "RC171-${DateTime.now().millisecondsSinceEpoch}",
+                        'mac_address': macAddress,
+                        'serial_number': 'RC171',
+                        'is_closed': 1, // Pre-cerrada para evitar cuadres de caja
+                      });
+
+                      ref.read(systemStatusProvider.notifier).forceCheckPendingTransactions();
+                    } catch (e) {
+                      print('Error guardando RC171: $e');
+                    }
 
                     Navigator.of(ctx).pop();
                     setState(() => _currentIndex = 1);

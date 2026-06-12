@@ -100,7 +100,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           SUM(t.amount) as pending_amount
         FROM transactions t
         LEFT JOIN users u ON t.cashier_id = u.id
-        WHERE t.is_closed = 0 AND t.product_id != 'CIERRE DE CAJA' AND t.product_id != 'APERTURA DE CAJA'
+        WHERE t.is_closed = 0 AND t.product_id != 'CIERRE DE CAJA' AND t.product_id != 'APERTURA DE CAJA' AND t.product_id != 'PMR'
         GROUP BY t.cashier_id
         HAVING pending_count > 0
       ''');

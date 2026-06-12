@@ -28,6 +28,15 @@ class _LocationSelectionDialogState extends ConsumerState<LocationSelectionDialo
     try {
       final initService = ref.read(initServiceProvider);
       final data = await initService.initializePOS();
+
+      // Si el servidor nos asignó automáticamente una ubicación, no hace falta que el usuario escoja
+      if (data['auto_assigned_location'] == true) {
+        if (mounted) {
+          Navigator.of(context).pop(true);
+        }
+        return;
+      }
+
       List<PosLocationModel> loadedLocations = List.from(data['locations'] as List<PosLocationModel>);
       
       // Mover al principio la sucursal del usuario actual

@@ -401,21 +401,22 @@ class SalesHistoryNotifier extends StateNotifier<SalesHistoryState> {
 
       final currentCashierId = await _storage.getActiveCashierId();
 
-      // Buscar por fecha para no borrar de la vista las que ya se cerraron hoy,
-      // pero excluir las aperturas PMR de la vista de historial.
+      // Filtrar por la sesión abierta y el cajero activo para garantizar que
+      // la lista de Recaudo coincida exactamente con lo que se va a cerrar.
       final data = await db.rawQuery(
         '''
         SELECT t.*, p.product_name 
         FROM transactions t
         LEFT JOIN products p ON t.product_id = p.id
-        WHERE t.created_at LIKE ? 
+        WHERE (t.session_id = ? OR (? IS NULL AND t.session_id IS NULL))
           AND t.product_id != 'PMR' 
           AND t.product_id != 'APERTURA DE CAJA'
           AND t.product_id != 'CIERRE DE CAJA'
+          AND t.product_id != 'INGRESO_FISCALIZADOR'
           AND t.cashier_id = ?
         ORDER BY t.created_at DESC
         ''',
-        ['$todayStr%', currentCashierId]
+        [openSessionId, openSessionId, currentCashierId]
       );
       
       // Mapear el flag 'is_closed' desde la base de datos (0 o 1)
@@ -467,8 +468,8 @@ class SalesHistoryNotifier extends StateNotifier<SalesHistoryState> {
       final todayStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
 
       final data = await db.query('transactions', 
-        where: 'created_at LIKE ? AND (id LIKE ? OR amount LIKE ?) AND product_id != ? AND product_id != ?', 
-        whereArgs: ['$todayStr%', '%$query%', '%$query%', 'APERTURA DE CAJA', 'CIERRE DE CAJA'], 
+        where: 'created_at LIKE ? AND (id LIKE ? OR amount LIKE ?) AND product_id != ? AND product_id != ? AND product_id != ?', 
+        whereArgs: ['$todayStr%', '%$query%', '%$query%', 'APERTURA DE CAJA', 'CIERRE DE CAJA', 'INGRESO_FISCALIZADOR'], 
         orderBy: 'created_at DESC');
       
       List<Map<String, dynamic>> mappedData = data.map((tx) {

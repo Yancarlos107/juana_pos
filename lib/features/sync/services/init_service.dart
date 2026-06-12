@@ -9,6 +9,7 @@ import '../../../core/network/dio_client.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../../../core/database/database_helper.dart';
 import 'package:sqflite/sqflite.dart';
+import '../../../core/utils/device_utils.dart';
 
 final initServiceProvider = Provider<InitService>((ref) {
   final dio = ref.watch(dioProvider);
@@ -27,9 +28,14 @@ class InitService {
       final token = await _storage.getToken();
       if (token == null) throw Exception('No hay token disponible para la inicialización.');
 
+      final macAddress = await DeviceUtils.getMacAddress();
+
       final response = await _dio.get(
         '/cashier-initialize',
-        queryParameters: {'city': 'valledupar'},
+        queryParameters: {
+          'city': 'valledupar',
+          'ime': macAddress,
+        },
         options: Options(
           headers: {
             'Authorization': 'Bearer $token',
@@ -79,9 +85,26 @@ class InitService {
         locations = locationsList.map((l) => PosLocationModel.fromJson(l)).toList();
       }
 
+      // 3. Asignación automática de punto de venta (pos_assign_pos_location)
+      bool autoAssignedLocation = false;
+      if (data.containsKey('pos_assign_pos_location') && data['pos_assign_pos_location'] != null) {
+        final assignedLoc = data['pos_assign_pos_location'];
+        if (assignedLoc is Map) {
+          final locId = assignedLoc['id'];
+          final locName = assignedLoc['name'];
+          if (locId != null && locName != null) {
+            await _storage.savePosLocationId(locId as int);
+            await _storage.savePosLocationName(locName.toString());
+            await updatePosSchedule(locId as int);
+            autoAssignedLocation = true;
+          }
+        }
+      }
+
       return {
         'locations': locations,
         'novelties': data['novelty_types'] ?? [],
+        'auto_assigned_location': autoAssignedLocation,
       };
     } on DioException catch (e) {
       if (e.type == DioExceptionType.connectionTimeout || 
@@ -97,6 +120,7 @@ class InitService {
           return {
             'locations': locations,
             'novelties': [], // No importa, luego las busca con getCachedNovelties
+            'auto_assigned_location': false,
           };
         }
         throw Exception('offline_no_cache');

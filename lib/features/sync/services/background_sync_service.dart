@@ -71,12 +71,16 @@ class BackgroundSyncService {
           .where((tx) =>
               tx['product_id'] != 'CIERRE DE CAJA' &&
               tx['product_id'] != 'APERTURA DE CAJA' &&
+              tx['product_id'] != 'INGRESO_FISCALIZADOR' &&
               tx['product_id'] != 'PMR')
           .toList();
       final pendingClosures =
           pending.where((tx) => tx['product_id'] == 'CIERRE DE CAJA').toList();
       final pendingOpenings = pending
           .where((tx) => tx['product_id'] == 'APERTURA DE CAJA')
+          .toList();
+      final pendingSupervisorLogins = pending
+          .where((tx) => tx['product_id'] == 'INGRESO_FISCALIZADOR')
           .toList();
 
       // Obtener el ID de la ubicación POS y el hash del dispositivo
@@ -452,6 +456,79 @@ class BackgroundSyncService {
               'DEBUG: Fallo al sincronizar Apertura de Caja (RC174) $txId: $e');
         }
       }
+
+      // Sincronizar Ingreso de Fiscalizador (RC171)
+      for (final tx in pendingSupervisorLogins) {
+        final txId = tx['id'];
+        final txCashierId = tx['cashier_id'] ?? 1;
+
+        // Buscar nombre del fiscalizador
+        final userQuery = await db.query('users',
+            where: 'id = ?', whereArgs: [txCashierId], limit: 1);
+        final txEmployeeName = userQuery.isNotEmpty
+            ? (userQuery.first['name'] as String? ?? "Fiscalizador")
+            : "Fiscalizador";
+
+        final payload = {
+          "type_code": "RC171",
+          "token": "",
+          "dat": (DateTime.parse(tx['created_at'].toString()).millisecondsSinceEpoch ~/ 1000).toString(),
+          "lat": tx['lat']?.toString() ?? "0.0",
+          "lon": tx['lon']?.toString() ?? "0.0",
+          "hw": deviceInfo['hw'],
+          "ime": tx['mac_address']?.toString() ?? deviceInfo['ime'],
+          "employee_full_name": txEmployeeName,
+          "typ": "RC171",
+          "ver": "1.0.0",
+          if (posLocationId != null)
+            "pos_location_id": posLocationId.toString(),
+        };
+
+        try {
+          final response = await _dio.post(
+            '/pos-transactions',
+            data: payload,
+            options: Options(
+              validateStatus: (status) =>
+                  status != null &&
+                  status < 500,
+            ),
+          );
+          if (response.statusCode == 200 ||
+              response.statusCode == 201 ||
+              response.statusCode == 409) {
+
+            int? posTransactionId;
+            final responseData = response.data;
+            if (responseData is Map && responseData['success'] == true) {
+              final dataObj = responseData['data'];
+              if (dataObj is Map) {
+                posTransactionId = dataObj['pos_transaction_id'];
+              }
+            }
+
+            final updateData = <String, dynamic>{'status': 'synced'};
+            if (posTransactionId != null) {
+              updateData['server_id'] = posTransactionId;
+            }
+
+            await db.update('transactions', updateData,
+                where: 'id = ?', whereArgs: [txId]);
+            print(
+                'DEBUG: Ingreso Fiscalizador (RC171) sincronizado con éxito: $txId');
+            _ref
+                .read(systemStatusProvider.notifier)
+                .forceCheckPendingTransactions();
+          } else {
+            print(
+                'DEBUG: Error al sincronizar Ingreso Fiscalizador (RC171) $txId: ${response.statusCode}');
+          }
+        } catch (e) {
+          print(
+              'DEBUG: Fallo al sincronizar Ingreso Fiscalizador (RC171) $txId: $e');
+        }
+      }
+
     } catch (e) {
       print('DEBUG: Error general en syncPendingData: $e');
     }
