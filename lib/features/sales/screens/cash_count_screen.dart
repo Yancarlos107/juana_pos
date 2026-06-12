@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../helpers/closing_helper.dart';
+import '../../auth/providers/auth_providers.dart';
 
 class CashCountScreen extends ConsumerStatefulWidget {
   final bool isLogout;
@@ -93,17 +94,18 @@ class _CashCountScreenState extends ConsumerState<CashCountScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 20),
-              SwitchListTile(
-                title: const Text('Arrastre', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                subtitle: const Text('Imprime el consolidado global de todo el día', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                value: isArrastre,
-                activeColor: const Color(0xFF6642F8),
-                onChanged: (val) {
-                  setState(() {
-                    isArrastre = val;
-                  });
-                },
-              ),
+              if (ref.read(reviewerNameProvider) == null)
+                SwitchListTile(
+                  title: const Text('Arrastre', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                  subtitle: const Text('Imprime el consolidado global de todo el día', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  value: isArrastre,
+                  activeColor: const Color(0xFF6642F8),
+                  onChanged: (val) {
+                    setState(() {
+                      isArrastre = val;
+                    });
+                  },
+                ),
             ],
           ),
         ),

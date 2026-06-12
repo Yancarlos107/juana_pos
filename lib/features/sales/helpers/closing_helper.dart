@@ -54,6 +54,52 @@ class ClosingHelper {
     return totalAmount;
   }
 
+  static void showEmptySalesModal(BuildContext context, {VoidCallback? onClose}) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        Future.delayed(const Duration(seconds: 3), () {
+          if (ctx.mounted && Navigator.canPop(ctx)) {
+            Navigator.pop(ctx);
+            if (onClose != null) {
+              onClose();
+            }
+          }
+        });
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.orange, width: 3),
+            ),
+            child: const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.info_outline_rounded, color: Colors.orange, size: 60),
+                SizedBox(height: 16),
+                Text(
+                  'NO HAY VENTAS PARA HACER UN CIERRE DE CAJA',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.black87),
+                ),
+                SizedBox(height: 16),
+                Text(
+                  'CONTINÚA CON EL CIERRE DE SESIÓN NORMAL',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+    );
+  }
+
   static Future<void> printArqueoTicket(BuildContext context, WidgetRef ref) async {
     showDialog(
       context: context,
@@ -80,6 +126,14 @@ class ClosingHelper {
         where: 'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id != ? AND product_id != ?', 
         whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA']
       );
+
+      if (unclosedSales.isEmpty) {
+        if (context.mounted) {
+          Navigator.pop(context); // Cerrar loader
+          showEmptySalesModal(context);
+        }
+        return;
+      }
 
       double totalAmount = 0;
       Map<String, int> breakdownQty = {};
@@ -171,8 +225,12 @@ class ClosingHelper {
     );
 
     if (unclosedSales.isEmpty) {
-      if (isLogout) {
-        _executeLogout(context, ref);
+      if (context.mounted) {
+        showEmptySalesModal(context, onClose: () {
+          if (isLogout && context.mounted) {
+            Navigator.pop(context); // Cierra modal previo o pantalla si aplica
+          }
+        });
       }
       return;
     }
@@ -317,17 +375,18 @@ class ClosingHelper {
               ),
             ),
             const SizedBox(height: 20),
-            SwitchListTile(
-              title: const Text('Arrastre', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-              subtitle: const Text('Imprime el consolidado global de todo el día', style: TextStyle(fontSize: 12, color: Colors.grey)),
-              value: isArrastre,
-              activeColor: const Color(0xFF6642F8),
-              onChanged: (val) {
-                setState(() {
-                  isArrastre = val;
-                });
-              },
-            ),
+            if (ref.read(reviewerNameProvider) == null)
+              SwitchListTile(
+                title: const Text('Arrastre', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                subtitle: const Text('Imprime el consolidado global de todo el día', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                value: isArrastre,
+                activeColor: const Color(0xFF6642F8),
+                onChanged: (val) {
+                  setState(() {
+                    isArrastre = val;
+                  });
+                },
+              ),
           ],
         ),
         actions: [
@@ -473,13 +532,12 @@ class ClosingHelper {
 
     if (unclosedSales.isEmpty && !isArrastre) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('La caja está limpia. No hay ventas para realizar el cierre.'),
-            backgroundColor: Colors.orange));
-        Navigator.pop(context);
-      }
-      if (isLogout) {
-        _executeLogout(context, ref);
+        showEmptySalesModal(context, onClose: () {
+          // Si venimos de la pantalla de conteo (isLogout = true), la cerramos para volver al Dashboard
+          if (isLogout && context.mounted) {
+            Navigator.pop(context);
+          }
+        });
       }
       return;
     }
@@ -585,8 +643,8 @@ class ClosingHelper {
     if (isArrastre) {
       final allSales = await db.query(
         'transactions', 
-        where: 'session_id = ? AND product_id != ? AND product_id != ?', 
-        whereArgs: [sessionId, 'CIERRE DE CAJA', 'APERTURA DE CAJA']
+        where: 'session_id = ? AND product_id != ? AND product_id != ? AND product_id != ?', 
+        whereArgs: [sessionId, 'CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR']
       );
       
       int dayCount = 0;
@@ -626,6 +684,17 @@ class ClosingHelper {
 
     if (context.mounted) Navigator.pop(context); // Quitar loader ANTES de imprimir para evitar deadlock de UI
 
+    final isFiscalizador = ref.read(reviewerNameProvider) != null;
+    bool shouldPrintBreakdown = false;
+    
+    if (isFiscalizador) {
+      shouldPrintBreakdown = true;
+    } else {
+      if (cashList != null && cash != null && cash > 0) {
+        shouldPrintBreakdown = true;
+      }
+    }
+
     final printer = ref.read(printerServiceProvider);
     final printResult = await printer.printClosingTicket(
       cashierName: cashierName,
@@ -637,7 +706,7 @@ class ClosingHelper {
       startTime: startTimeLabel,
       endTime: closingLabel,
       qrData: qrData,
-      breakdown: breakdownLines,
+      breakdown: shouldPrintBreakdown ? breakdownLines : null,
       pmrCount: pmrCount,
       pmrHours: pmrHours,
       reprintsCount: reprintsCount,

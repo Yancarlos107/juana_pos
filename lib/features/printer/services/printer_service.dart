@@ -410,7 +410,7 @@ class PrinterService {
         final qty = p['qty'].toString();
         final name = p['name'].toString().toUpperCase();
         final total = CurrencyFormatter.format(p['total'] as double);
-        bytes.addAll(_text('____ $qty x $name  ------ $total\n'));
+        bytes.addAll(_text('$qty x $name:$total\n'));
       }
       bytes.addAll(_text('\n'));
 
@@ -561,8 +561,16 @@ class PrinterService {
       bytes.addAll(_text('Código: $cashierId - ${posLocationId ?? 0}\n'));
       bytes.addAll(_text('Cierre: $endTime\n\n'));
 
-      // El breakdown (desglose) fue retirado a petición del usuario
-      // El TOTAL SISTEMA/CIERRE fue retirado a petición del usuario
+      if (breakdown != null && breakdown.isNotEmpty) {
+        bytes.addAll([0x1B, 0x61, 0x00]); // Left
+        bytes.addAll([0x1B, 0x45, 0x01]); // Bold
+        bytes.addAll(_text('DESGLOSE DE TARIFAS:\n'));
+        bytes.addAll([0x1B, 0x45, 0x00]); // Normal
+        for (var line in breakdown) {
+          bytes.addAll(_text('$line\n'));
+        }
+        bytes.addAll(_text('\n'));
+      }
 
       if (pmrCount > 0) {
         bytes.addAll([0x1B, 0x61, 0x00]); // Left
@@ -588,15 +596,13 @@ class PrinterService {
         isManualCash = (coinsTotal == 0.0 && billsTotal == 0.0);
       }
 
-      if (!isManualCash) {
-        bytes.addAll([0x1B, 0x45, 0x01]); // Bold
-        bytes.addAll([0x1B, 0x61, 0x00]); // Left
-        bytes.addAll([0x1D, 0x21, 0x10]); // Doble ancho
-        bytes.addAll(
-            _text('TOTAL: \$${CurrencyFormatter.format(totalAmount)}\n\n'));
-        bytes.addAll([0x1D, 0x21, 0x00]); // Normal
-        bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
-      }
+      bytes.addAll([0x1B, 0x45, 0x01]); // Bold
+      bytes.addAll([0x1B, 0x61, 0x00]); // Left
+      bytes.addAll([0x1D, 0x21, 0x10]); // Doble ancho
+      bytes.addAll(
+          _text('TOTAL: \$${CurrencyFormatter.format(totalAmount)}\n\n'));
+      bytes.addAll([0x1D, 0x21, 0x00]); // Normal
+      bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
 
       if (cashList is Map && cash != null) {
         bytes.addAll([0x1B, 0x61, 0x00]); // Left
@@ -648,13 +654,10 @@ class PrinterService {
       }
 
       if (daySummary != null) {
-        bytes.addAll(_text('\n------------------------------\n'));
-        bytes.addAll([0x1B, 0x61, 0x01]); // Centrado
+        bytes.addAll([0x1B, 0x61, 0x00]); // Left
         bytes.addAll([0x1B, 0x45, 0x01]); // Bold
         bytes.addAll(_text('RESUMEN DEL DIA\n'));
         bytes.addAll([0x1B, 0x45, 0x00]); // No Bold
-        bytes.addAll([0x1B, 0x61, 0x00]); // Left
-        bytes.addAll(_text('------------------------------\n'));
 
         final tTrans = daySummary['totalTransactions'] ?? 0;
         bytes.addAll(_text('Transacciones Totales: $tTrans\n\n'));

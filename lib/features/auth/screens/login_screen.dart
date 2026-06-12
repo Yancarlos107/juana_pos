@@ -19,6 +19,7 @@ import 'package:app_settings/app_settings.dart';
 import '../../../core/widgets/kiosk_logo_button.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/constants/api_constants.dart';
+import '../../../core/utils/device_utils.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -37,6 +38,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   TextEditingController? _activeController;
   bool _obscurePassword = true;
   bool _hasUnclosedSales = false;
+  String _macAddress = '';
 
   @override
   void initState() {
@@ -44,6 +46,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     _activeController = _emailController;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkUnclosedSales();
+      _loadMacAddress();
     });
     _userFocusNode.addListener(() {
       if (_userFocusNode.hasFocus) {
@@ -55,6 +58,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         setState(() => _activeController = _passwordController);
       }
     });
+  }
+
+  Future<void> _loadMacAddress() async {
+    final mac = await DeviceUtils.getMacAddress();
+    if (mounted) {
+      setState(() {
+        _macAddress = mac ?? 'Desconocida';
+      });
+    }
   }
 
   @override
@@ -873,7 +885,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             bottom: 16,
             left: 16,
             child: Text(
-              ApiConstants.displayVersion,
+              '${ApiConstants.displayVersion} - MAC: ${_macAddress.isEmpty ? 'Cargando...' : _macAddress}',
               style: const TextStyle(
                 color: Colors.black54,
                 fontWeight: FontWeight.bold,
