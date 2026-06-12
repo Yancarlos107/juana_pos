@@ -1,7 +1,10 @@
 package co.Juana.red_recarga_pos
 
+import android.app.ActivityManager
 import android.app.PendingIntent
+import android.app.admin.DevicePolicyManager
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -23,6 +26,7 @@ class MainActivity : FlutterActivity() {
 
     private val USB_STATUS_CHANNEL = "co.Juana.usb/status"
     private val PRINTER_CHANNEL    = "co.Juana.epson_printer"
+    private val KIOSK_CHANNEL      = "co.Juana.kiosk"
     private val ACTION_USB_PERM    = "co.Juana.USB_PERMISSION"
 
     // Vendor ID 0x04B8 = 1208 decimal = Seiko Epson Corp.
@@ -73,6 +77,7 @@ class MainActivity : FlutterActivity() {
         
         setupUsbStatusChannel(flutterEngine)
         setupPrinterChannel(flutterEngine)
+        setupKioskChannel(flutterEngine)
     }
 
     override fun onDestroy() {
@@ -129,6 +134,93 @@ class MainActivity : FlutterActivity() {
                             result.error("INVALID_ARGS", "Se requieren bytes ESC/POS", null)
                         } else {
                             printViaUsbDirect(bytes, result)
+                        }
+                    }
+
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    // -------------------------------------------------------------------------
+    // Channel: Kiosco (Lock Task Mode con Device Owner)
+    // Bloquea barras del sistema, gestos y botones de forma real (no solo visual).
+    // Requiere aprovisionar la tablet una vez:
+    //   adb shell dpm set-device-owner co.Juana.red_recarga_pos/.KioskDeviceAdminReceiver
+    // -------------------------------------------------------------------------
+
+    private val dpm: DevicePolicyManager
+        get() = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+
+    private val adminComponent: ComponentName
+        get() = ComponentName(this, KioskDeviceAdminReceiver::class.java)
+
+    private fun isDeviceOwner(): Boolean = dpm.isDeviceOwnerApp(packageName)
+
+    private fun isInLockTaskMode(): Boolean {
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        return am.lockTaskModeState != ActivityManager.LOCK_TASK_MODE_NONE
+    }
+
+    private fun setupKioskChannel(flutterEngine: FlutterEngine) {
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, KIOSK_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+
+                    "isDeviceOwner" -> result.success(isDeviceOwner())
+
+                    "isInKioskMode" -> result.success(isInLockTaskMode())
+
+                    // Entra al kiosco. Solo si la app es Device Owner: así se evita
+                    // el "screen pinning" débil (con diálogo y escape por botones).
+                    "startKiosk" -> {
+                        try {
+                            if (!isDeviceOwner()) {
+                                result.success(false)
+                                return@setMethodCallHandler
+                            }
+                            dpm.setLockTaskPackages(adminComponent, arrayOf(packageName))
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                                dpm.setLockTaskFeatures(
+                                    adminComponent,
+                                    DevicePolicyManager.LOCK_TASK_FEATURE_NONE
+                                )
+                            }
+                            if (!isInLockTaskMode()) {
+                                startLockTask()
+                            }
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("KIOSK_ERROR", "${e.javaClass.simpleName}: ${e.message}", null)
+                        }
+                    }
+
+                    // Sale del kiosco (mantenimiento administrativo).
+                    "stopKiosk" -> {
+                        try {
+                            if (isInLockTaskMode()) {
+                                stopLockTask()
+                            }
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("KIOSK_ERROR", "${e.javaClass.simpleName}: ${e.message}", null)
+                        }
+                    }
+
+                    // Libera el dispositivo: la app deja de ser Device Owner y vuelve
+                    // a ser desinstalable. Necesario antes de bajar de versión.
+                    "clearDeviceOwner" -> {
+                        try {
+                            if (isInLockTaskMode()) {
+                                stopLockTask()
+                            }
+                            if (isDeviceOwner()) {
+                                @Suppress("DEPRECATION")
+                                dpm.clearDeviceOwnerApp(packageName)
+                            }
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("KIOSK_ERROR", "${e.javaClass.simpleName}: ${e.message}", null)
                         }
                     }
 

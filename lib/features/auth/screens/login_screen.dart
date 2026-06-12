@@ -17,6 +17,7 @@ import 'dart:math' as math;
 import 'package:path_provider/path_provider.dart';
 import 'package:app_settings/app_settings.dart';
 import '../../../core/widgets/kiosk_logo_button.dart';
+import '../../../core/services/kiosk_service.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/utils/device_utils.dart';
@@ -551,30 +552,110 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
-  void _showSupportOptions() {
+  Future<void> _showSupportOptions() async {
+    final bool isDeviceOwner = await KioskService.isDeviceOwner();
+    final bool isInKiosk = await KioskService.isInKioskMode();
+    if (!mounted) return;
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Opciones de Soporte',
             style: TextStyle(fontWeight: FontWeight.bold)),
-        content: const Text('Seleccione una opción de soporte administrativo:'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.settings, color: Color(0xFF6642F8)),
+              title: const Text('Ajustes del Sistema'),
+              subtitle: isInKiosk
+                  ? const Text('Sale del kiosco para permitir el acceso')
+                  : null,
+              onTap: () async {
+                Navigator.pop(ctx);
+                // Con el Lock Task activo, Android bloquea abrir Settings:
+                // hay que salir del kiosco primero.
+                await KioskService.stop();
+                AppSettings.openAppSettings();
+              },
+            ),
+            ListTile(
+              leading:
+                  const Icon(Icons.file_download, color: Color(0xFF6642F8)),
+              title: const Text('Exportar Tramas a TXT'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _exportTransactions();
+              },
+            ),
+            if (isDeviceOwner && !isInKiosk)
+              ListTile(
+                leading: const Icon(Icons.lock, color: Color(0xFF6642F8)),
+                title: const Text('Activar Modo Kiosco'),
+                subtitle: const Text('Vuelve a bloquear el dispositivo'),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await KioskService.start();
+                },
+              ),
+            if (isDeviceOwner)
+              ListTile(
+                leading: const Icon(Icons.lock_open, color: Colors.red),
+                title: const Text('Liberar Dispositivo',
+                    style: TextStyle(color: Colors.red)),
+                subtitle: const Text(
+                    'Permite desinstalar la app. Requiere ADB para revertir.'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _confirmClearDeviceOwner();
+                },
+              ),
+          ],
+        ),
         actions: [
           TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              AppSettings.openAppSettings();
-            },
-            child: const Text('Ajustes del Sistema'),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('CERRAR', style: TextStyle(color: Colors.grey)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmClearDeviceOwner() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Liberar Dispositivo?',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text(
+            'La app dejará de ser Device Owner: el modo kiosco quedará '
+            'desactivado y la app podrá desinstalarse desde Ajustes.\n\n'
+            'Para volver a bloquear el dispositivo será necesario '
+            'aprovisionarlo de nuevo por ADB.\n\n'
+            'Use esta opción solo para desinstalar o cambiar de versión.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('CANCELAR', style: TextStyle(color: Colors.grey)),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(ctx);
-              _exportTransactions();
+              final ok = await KioskService.clearDeviceOwner();
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(ok
+                      ? 'Dispositivo liberado. La app ya puede desinstalarse.'
+                      : 'No se pudo liberar el dispositivo.'),
+                  backgroundColor: ok ? Colors.green : Colors.red,
+                ),
+              );
             },
             style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF6642F8),
-                foregroundColor: Colors.white),
-            child: const Text('Exportar Tramas a TXT'),
+                backgroundColor: Colors.red, foregroundColor: Colors.white),
+            child: const Text('LIBERAR'),
           ),
         ],
       ),

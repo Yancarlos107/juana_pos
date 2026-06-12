@@ -6,12 +6,19 @@ import 'features/sales/screens/dashboard_screen.dart';
 import 'features/sales/screens/recaudo_screen.dart';
 import 'features/printer/screens/epson_test_screen.dart';
 import 'core/storage/local_storage_repository.dart';
+import 'core/services/kiosk_service.dart';
 import 'core/theme/app_theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   runApp(const ProviderScope(child: MyApp()));
+  // Kiosco real (Lock Task Mode): se activa tras el primer frame, cuando el
+  // canal nativo ya está registrado. Si la tablet no está aprovisionada como
+  // Device Owner, no hace nada (queda solo el modo inmersivo visual).
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    KioskService.start();
+  });
 }
 
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();

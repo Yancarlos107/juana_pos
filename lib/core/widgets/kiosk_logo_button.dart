@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:app_settings/app_settings.dart';
 import 'dart:async';
+import '../services/kiosk_service.dart';
 
 class KioskLogoButton extends StatefulWidget {
   final Widget child;
@@ -90,6 +91,9 @@ class _KioskLogoButtonState extends State<KioskLogoButton> {
                       if (widget.onSuccess != null) {
                         widget.onSuccess!();
                       } else {
+                        // Con el Lock Task activo, Android bloquea abrir
+                        // Settings: hay que salir del kiosco primero.
+                        await KioskService.stop();
                         AppSettings.openAppSettings();
                       }
                     } else {
