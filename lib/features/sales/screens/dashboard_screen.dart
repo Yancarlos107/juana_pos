@@ -205,7 +205,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             final cashierName = ref.read(authProvider).user?.name ?? 'Operador';
             final cashierCode = (ref.read(authProvider).user?.email ?? '01').split('@').first;
 
-            final printResult = await ref.read(printerServiceProvider).printTicket(
+            bool? printResult = await ref.read(printerServiceProvider).printTicket(
                   transactionId: serialNumber,
                   amount: product.value,
                   qrData: result.qrCode,
@@ -215,6 +215,22 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   branchName: branchName,
                   productName: '${product.productName}$pmrLabel',
                 );
+                
+            if (printResult != true) {
+              // Reintento automático si el hardware USB estaba "dormido" o tomó tiempo en inicializarse la primera vez
+              await Future.delayed(const Duration(milliseconds: 1500));
+              printResult = await ref.read(printerServiceProvider).printTicket(
+                    transactionId: serialNumber,
+                    amount: product.value,
+                    qrData: result.qrCode,
+                    cashierName: cashierName,
+                    cashierCode: cashierCode,
+                    posLocationId: posLocationId,
+                    branchName: branchName,
+                    productName: '${product.productName}$pmrLabel',
+                  );
+            }
+
             if (printResult == true) {
               await ref.read(salesHistoryProvider.notifier).markAsPrinted(result.transactionId, 1);
             }
@@ -320,7 +336,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       builder: (_) => const Center(
                           child: CircularProgressIndicator(color: Color(0xFF6642F8))),
                     );
-                    await ref.read(authProvider.notifier).logout();
+                    await ref.read(authProvider.notifier).logout(ref);
                     if (mounted) {
                       Navigator.pop(context);
                       Navigator.pushReplacementNamed(context, '/login');
@@ -494,6 +510,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             } else if (i == 1) {
               _showRecaudoPinDialog();
             } else {
+              // Si cambia a cualquier otra pestaña, salir del modo fiscalizador
+              ref.read(reviewerNameProvider.notifier).state = null;
               setState(() => _currentIndex = i);
             }
           },

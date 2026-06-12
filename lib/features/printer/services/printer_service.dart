@@ -331,8 +331,7 @@ class PrinterService {
       bytes.addAll(_text('Corredor Central Norte\n'));
 
       if (branchName != null && branchName.trim().isNotEmpty) {
-        bytes.addAll(_text(
-            'Estacion: ${branchName.trim().toUpperCase()} (ID: ${posLocationId ?? 0})\n'));
+        bytes.addAll(_text('Estacion: ${branchName.trim().toUpperCase()} \n'));
       }
 
       if (isReprint) {
@@ -341,7 +340,11 @@ class PrinterService {
 
       bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
       bytes.addAll(_text('Fecha: $dateStr $timeStr\n'));
-      bytes.addAll(_text('Serial: $transactionId\n'));
+      if (!transactionId.endsWith(cashierCode)) {
+        bytes.addAll(_text('Serial: $transactionId-$cashierCode\n'));
+      } else {
+        bytes.addAll(_text('Serial: $transactionId\n'));
+      }
 
       bytes.addAll([0x1B, 0x45, 0x01]); // Bold
       bytes.addAll([0x1D, 0x21, 0x33]); // Tamaño GIGANTE (x4)
@@ -564,7 +567,7 @@ class PrinterService {
       if (breakdown != null && breakdown.isNotEmpty) {
         bytes.addAll([0x1B, 0x61, 0x00]); // Left
         bytes.addAll([0x1B, 0x45, 0x01]); // Bold
-        bytes.addAll(_text('DESGLOSE DE TARIFAS:\n'));
+        bytes.addAll(_text('TARIFAS:\n'));
         bytes.addAll([0x1B, 0x45, 0x00]); // Normal
         for (var line in breakdown) {
           bytes.addAll(_text('$line\n'));
@@ -599,8 +602,9 @@ class PrinterService {
       bytes.addAll([0x1B, 0x45, 0x01]); // Bold
       bytes.addAll([0x1B, 0x61, 0x00]); // Left
       bytes.addAll([0x1D, 0x21, 0x10]); // Doble ancho
-      bytes.addAll(
-          _text('TOTAL: \$${CurrencyFormatter.format(totalAmount)}\n\n'));
+      bytes
+          .addAll(_text('TOTAL: \$${CurrencyFormatter.format(totalAmount)}\n'));
+      bytes.addAll(_text('FONDO: \$5.00\n\n'));
       bytes.addAll([0x1D, 0x21, 0x00]); // Normal
       bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
 
@@ -623,9 +627,9 @@ class PrinterService {
               _text('Billetes: \$${CurrencyFormatter.format(billsTotal)}\n'));
 
           bytes.addAll([0x1B, 0x45, 0x01]); // Bold on
-          bytes.addAll([0x1D, 0x21, 0x11]); // x2 size
+          bytes.addAll([0x1D, 0x21, 0x10]); // x2 ancho
           bytes.addAll(
-              _text('\nEFECTIVO:\n\$${CurrencyFormatter.format(cash)}\n\n'));
+              _text('\nEFECTIVO: \$${CurrencyFormatter.format(cash)}\n\n'));
         }
 
         bytes.addAll([0x1B, 0x45, 0x00]); // Bold off
@@ -674,11 +678,8 @@ class PrinterService {
         final double dTotal = daySummary['totalAmount'] ?? 0.0;
         bytes.addAll([0x1B, 0x45, 0x01]); // Bold
         bytes.addAll([0x1D, 0x21, 0x10]); // Doble ancho
-        bytes.addAll(
-            _text('TOTAL: \\\$${CurrencyFormatter.format(dTotal)}\n\n'));
-        bytes.addAll([0x1D, 0x21, 0x00]); // Normal
-        bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
-        bytes.addAll(_text('------------------------------\n'));
+        bytes.addAll(_text('TOTAL: \$${CurrencyFormatter.format(dTotal)}\n'));
+        bytes.addAll(_text('FONDO: \$5.00\n\n'));
       }
 
       bytes.addAll([

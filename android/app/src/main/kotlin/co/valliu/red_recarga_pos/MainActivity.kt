@@ -28,6 +28,34 @@ class MainActivity : FlutterActivity() {
     // Vendor ID 0x04B8 = 1208 decimal = Seiko Epson Corp.
     private val EPSON_VENDOR_ID = 0x04B8
 
+    private var pendingPrintBytes: ByteArray? = null
+    private var pendingPrintResult: MethodChannel.Result? = null
+
+    private val usbReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (ACTION_USB_PERM == intent.action) {
+                synchronized(this) {
+                    val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+                    if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
+                        log("Permiso USB concedido por el usuario")
+                        val bytes = pendingPrintBytes
+                        val result = pendingPrintResult
+                        pendingPrintBytes = null
+                        pendingPrintResult = null
+                        if (bytes != null && result != null) {
+                            printViaUsbDirect(bytes, result)
+                        }
+                    } else {
+                        log("Permiso USB DENEGADO por el usuario")
+                        pendingPrintResult?.error("NO_PERMISSION", "Permiso denegado por el usuario", null)
+                        pendingPrintBytes = null
+                        pendingPrintResult = null
+                    }
+                }
+            }
+        }
+    }
+
     private val logFile by lazy { File(filesDir, "epson_log.txt") }
     private fun log(msg: String) {
         val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
@@ -40,8 +68,20 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        val filter = IntentFilter(ACTION_USB_PERM)
+        registerReceiver(usbReceiver, filter)
+        
         setupUsbStatusChannel(flutterEngine)
         setupPrinterChannel(flutterEngine)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            unregisterReceiver(usbReceiver)
+        } catch (e: Exception) {
+            // Ignorar
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -121,12 +161,18 @@ class MainActivity : FlutterActivity() {
         log("Dispositivo encontrado: VID=${device.vendorId} PID=${device.productId} name=${device.deviceName}")
 
         if (!usbManager.hasPermission(device)) {
-            log("Sin permiso USB, solicitando...")
+            log("Sin permiso USB, solicitando y esperando respuesta...")
+            pendingPrintBytes = bytes
+            pendingPrintResult = result
             val pi = PendingIntent.getBroadcast(
-                this, 0, Intent(ACTION_USB_PERM), PendingIntent.FLAG_IMMUTABLE
+                this, 0, Intent(ACTION_USB_PERM),
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S)
+                    PendingIntent.FLAG_MUTABLE
+                else
+                    PendingIntent.FLAG_UPDATE_CURRENT
             )
             usbManager.requestPermission(device, pi)
-            result.error("NO_PERMISSION", "Permiso USB solicitado. Acepta el diálogo e intenta de nuevo.", null)
+            // No retornamos result.error aquí, esperamos a que el BroadcastReceiver lo maneje
             return
         }
 

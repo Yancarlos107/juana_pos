@@ -58,6 +58,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         setState(() => _activeController = _passwordController);
       }
     });
+
+    Future.microtask(() {
+      if (mounted) {
+        ref.read(reviewerNameProvider.notifier).state = null;
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      }
+    });
   }
 
   Future<void> _loadMacAddress() async {
@@ -112,7 +119,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           SUM(t.amount) as pending_amount
         FROM transactions t
         LEFT JOIN users u ON t.cashier_id = u.id
-        WHERE t.is_closed = 0 AND t.product_id != 'CIERRE DE CAJA' AND t.product_id != 'APERTURA DE CAJA' AND t.product_id != 'PMR'
+        WHERE t.is_closed = 0 AND t.product_id != 'CIERRE DE CAJA' AND t.product_id != 'APERTURA DE CAJA' AND t.product_id != 'PMR' AND t.product_id != 'INGRESO_FISCALIZADOR'
         GROUP BY t.cashier_id
         HAVING pending_count > 0
       ''');
@@ -196,6 +203,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
+    
+    // Limpiar cualquier estado residual de fiscalizador ANTES de iniciar sesión con un usuario normal
+    ref.read(reviewerNameProvider.notifier).state = null;
+    
     await ref.read(authProvider.notifier).login(
           _emailController.text.trim(),
           _passwordController.text.trim(),
@@ -293,7 +304,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           Navigator.pushReplacementNamed(context, '/dashboard');
         } else {
           // Si el usuario cancela, cerramos la sesión parcial
-          await ref.read(authProvider.notifier).logout();
+          await ref.read(authProvider.notifier).logout(ref);
         }
       }
     }
@@ -372,21 +383,144 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       );
 
       if (results.isNotEmpty) {
-        final qrData = results.first['qr_data']?.toString() ?? '';
+        final closure = results.first;
+        final qrData = closure['qr_data']?.toString() ?? '';
         final jsonStr = utf8.decode(base64Decode(qrData));
         final data = jsonDecode(jsonStr);
+        final sessionId = closure['session_id'];
+        final cashierId = closure['cashier_id'];
+        final createdAt = closure['created_at'];
+
+        // Cargar nombres de productos
+        final productsQuery = await db.query('products');
+        final Map<String, String> productNames = {
+          for (var p in productsQuery) p['id'].toString(): p['product_name']?.toString() ?? "Tarifa \${p['id']}"
+        };
+
+        // 1. Reconstruir desglose del cajero (Breakdown)
+        // Buscamos si hubo un cierre anterior en la misma sesión para este cajero
+        final previousClosure = await db.query(
+          'transactions',
+          where: 'session_id = ? AND cashier_id = ? AND product_id = ? AND created_at < ?',
+          whereArgs: [sessionId, cashierId, 'CIERRE DE CAJA', createdAt],
+          orderBy: 'created_at DESC',
+          limit: 1,
+        );
+        String? previousCreatedAt;
+        if (previousClosure.isNotEmpty) {
+           previousCreatedAt = previousClosure.first['created_at']?.toString();
+        }
+
+        String breakdownWhere = 'session_id = ? AND cashier_id = ? AND product_id != ? AND product_id != ? AND product_id != ? AND created_at <= ?';
+        List<Object?> breakdownArgs = [sessionId, cashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', createdAt];
+        
+        if (previousCreatedAt != null) {
+          breakdownWhere += ' AND created_at > ?';
+          breakdownArgs.add(previousCreatedAt);
+        }
+
+        final unclosedSales = await db.query(
+          'transactions', 
+          where: breakdownWhere, 
+          whereArgs: breakdownArgs
+        );
+        
+        Map<String, int> breakdownQty = {};
+        Map<String, double> breakdownTotal = {};
+        for (final sale in unclosedSales) {
+          if (sale['product_id'] == 'PMR') continue;
+          final amount = (sale['amount'] as num?)?.toDouble() ?? 0;
+          final productId = sale['product_id']?.toString() ?? 'Desc.';
+          breakdownQty[productId] = (breakdownQty[productId] ?? 0) + 1;
+          breakdownTotal[productId] = (breakdownTotal[productId] ?? 0) + amount;
+        }
+
+        List<String> breakdownLines = [];
+        breakdownQty.forEach((pId, qty) {
+          final t = breakdownTotal[pId] ?? 0;
+          final pName = productNames[pId] ?? 'Tarifa $pId';
+          final qtyStr = '${qty}x'.padRight(4);
+          final nameStr = pName.length > 15 ? pName.substring(0, 15) : pName.padRight(15);
+          final valStr = '\$${CurrencyFormatter.format(t)}'.padLeft(8);
+          breakdownLines.add('$qtyStr $nameStr $valStr');
+        });
+
+        // 2. Reconstruir Resumen del Día (Arrastre)
+        final allSales = await db.query(
+          'transactions', 
+          where: 'session_id = ? AND product_id != ? AND product_id != ? AND product_id != ? AND created_at <= ?', 
+          whereArgs: [sessionId, 'CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', createdAt]
+        );
+
+        int dayCount = 0;
+        double dayTotalAmount = 0;
+        Map<String, int> dayBreakdownQty = {};
+        Map<String, double> dayBreakdownTotal = {};
+        
+        for (final sale in allSales) {
+          if (sale['product_id'] == 'PMR') continue;
+          final amount = (sale['amount'] as num?)?.toDouble() ?? 0;
+          final productId = sale['product_id']?.toString() ?? 'Desc.';
+          dayCount++;
+          dayTotalAmount += amount;
+          dayBreakdownQty[productId] = (dayBreakdownQty[productId] ?? 0) + 1;
+          dayBreakdownTotal[productId] = (dayBreakdownTotal[productId] ?? 0) + amount;
+        }
+        
+        List<String> dayBreakdownLines = [];
+        dayBreakdownQty.forEach((pId, qty) {
+          final t = dayBreakdownTotal[pId] ?? 0;
+          final pName = productNames[pId] ?? 'Tarifa $pId';
+          final qtyStr = '${qty}x'.padRight(4);
+          final nameStr = pName.length > 15 ? pName.substring(0, 15) : pName.padRight(15);
+          final valStr = '\$${CurrencyFormatter.format(t)}'.padLeft(8);
+          dayBreakdownLines.add('$qtyStr $nameStr $valStr');
+        });
+
+        final daySummary = {
+          'totalTransactions': dayCount,
+          'totalAmount': dayTotalAmount,
+          'breakdown': dayBreakdownLines
+        };
+
+        Map<String, dynamic>? cashList;
+        if (data.containsKey('coins_total') && data.containsKey('bills_total')) {
+          cashList = {
+            'coins_total': data['coins_total'],
+            'bills_total': data['bills_total'],
+          };
+        }
+        final double? cash = data['cash'] != null ? (data['cash'] as num).toDouble() : null;
+        final double? balance = data['balance'] != null ? (data['balance'] as num).toDouble() : null;
+
+        final userEmail = ref.read(authProvider).user?.email ?? '01';
+        final currentUserCode = userEmail.split('@').first;
+
+        bool shouldPrintBreakdown = false;
+        if (cashList == null && cash == null) {
+          // Si no hay cash ni cashList, fue fiscalizador
+          shouldPrintBreakdown = true;
+        } else if (cash != null && cash > 0) {
+          // Si hay cash y es mayor a 0, fue un cajero con efectivo
+          shouldPrintBreakdown = true;
+        }
 
         final printResult = await printer.printClosingTicket(
           cashierName: data['c']?.toString() ?? 'Operador',
-          cashierId: results.first['cashier_id']?.toString() ?? '1',
+          cashierId: currentUserCode,
           branchName: 'Sucursal',
           totalTransactions: data['q'] ?? 0,
           totalAmount: (data['a'] as num?)?.toDouble() ?? 0,
           startTime: 'Turno',
-          endTime: '${data['d']} ${data['t'] ?? ''}',
+          endTime: '${data["d"]} ${data["t"] ?? ""}',
           qrData: qrData,
+          breakdown: shouldPrintBreakdown ? breakdownLines : null,
           pmrCount: data['pmr_q'] ?? 0,
           reprintsCount: 1,
+          daySummary: daySummary,
+          cashList: cashList,
+          cash: cash,
+          balance: balance,
         );
         success = printResult ?? false;
 
@@ -401,7 +535,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
 
     // 3. Cerrar sesión automáticamente tras autorizar la impresión
-    await ref.read(authProvider.notifier).logout();
+    await ref.read(authProvider.notifier).logout(ref);
 
     if (mounted) Navigator.of(context).pop();
 

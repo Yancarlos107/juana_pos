@@ -73,7 +73,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   /// Cerrar sesión
-  Future<void> logout() async {
+  Future<void> logout(WidgetRef ref) async {
+    ref.read(reviewerNameProvider.notifier).state = null;
     await _authService.logout();
     state = const AuthState(status: AuthStatus.unauthenticated);
   }

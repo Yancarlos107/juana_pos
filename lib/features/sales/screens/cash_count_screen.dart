@@ -21,7 +21,7 @@ class _CashCountScreenState extends ConsumerState<CashCountScreen> {
   @override
   void initState() {
     super.initState();
-    _activeController = _coinsController;
+    _activeController = _billsController;
   }
 
   /*

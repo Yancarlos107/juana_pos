@@ -608,8 +608,12 @@ class ClosingHelper {
         '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
     final closingLabel = '$dateStr $timeStr';
 
+    final userEmail = ref.read(authProvider).user?.email ?? '01';
+    final cashierCode = userEmail.split('@').first;
+
     final payloadMap = {
       "c": cashierName,
+      "cc": cashierCode,
       "b": branchId,
       "a": totalAmount,
       "q": unclosedSales.length - pmrCount,
@@ -698,7 +702,7 @@ class ClosingHelper {
     final printer = ref.read(printerServiceProvider);
     final printResult = await printer.printClosingTicket(
       cashierName: cashierName,
-      cashierId: currentCashierId.toString(),
+      cashierId: cashierCode,
       branchName: branchName,
       posLocationId: posLocationId,
       totalTransactions: unclosedSales.length - pmrCount,
@@ -754,8 +758,8 @@ class ClosingHelper {
       await db.update(
         'transactions',
         {'is_closed': 1},
-        where: 'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id != ?',
-        whereArgs: [currentSessionId, currentCashierId, 'CIERRE DE CAJA'],
+        where: '(session_id = ? OR (? IS NULL AND session_id IS NULL)) AND cashier_id = ? AND is_closed = 0 AND product_id != ?',
+        whereArgs: [currentSessionId, currentSessionId, currentCashierId, 'CIERRE DE CAJA'],
       );
       // Ya no cerramos la sesión global, permitiendo a otros cajeros cerrar sus propias ventas después
       if (isLogout) {
@@ -796,7 +800,8 @@ class ClosingHelper {
       await ref.read(backgroundSyncProvider).syncPendingData().timeout(const Duration(seconds: 3));
     } catch (_) {}
 
-    await ref.read(authProvider.notifier).logout();
+    ref.read(reviewerNameProvider.notifier).state = null;
+    await ref.read(authProvider.notifier).logout(ref);
     
     navigatorKey.currentState?.pop(); // close loader
     navigatorKey.currentState?.pushNamedAndRemoveUntil('/login', (route) => false);
