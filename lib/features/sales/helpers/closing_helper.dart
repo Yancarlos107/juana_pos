@@ -125,6 +125,7 @@ class ClosingHelper {
       
       if (printResult == true && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Arqueo impreso con éxito.')));
+        Navigator.of(context).pushReplacementNamed('/dashboard');
       }
     } catch (e) {
       if (context.mounted) {
