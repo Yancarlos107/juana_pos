@@ -37,8 +37,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   String _posName = 'Estación';
 
   int get _cartTotalItems => _cart.values.fold(0, (sum, val) => sum + val);
-  double get _cartTotalValue => _cart.entries
-      .fold(0.0, (sum, entry) => sum + (entry.key.value * entry.value));
+  double get _cartTotalValue => _cart.entries.fold(0.0, (sum, entry) => sum + (entry.key.value * entry.value));
 
   @override
   void initState() {
@@ -56,8 +55,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       final posName = await storage.getPosLocationName();
       if (mounted) {
         setState(() {
-          _posName =
-              posName ?? ref.read(authProvider).user?.branchName ?? 'Estación';
+          _posName = posName ?? ref.read(authProvider).user?.branchName ?? 'Estación';
         });
       }
     });
@@ -82,12 +80,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           children: [
             const Row(
               children: [
-                Icon(Icons.shopping_cart_checkout_rounded,
-                    color: Color(0xFF6642F8)),
+                Icon(Icons.shopping_cart_checkout_rounded, color: Color(0xFF6642F8)),
                 SizedBox(width: 10),
-                Text('Resumen de Venta',
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, fontSize: 26)),
+                Text('Resumen de Venta', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 26)),
               ],
             ),
             IconButton(
@@ -106,11 +101,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('${entry.value}x ${entry.key.productName}',
-                        style: const TextStyle(fontSize: 20)),
-                    Text('\$ ${_formatCurrency(entry.key.value * entry.value)}',
-                        style: const TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.bold)),
+                    Text('${entry.value}x ${entry.key.productName}', style: const TextStyle(fontSize: 20)),
+                    Text('\$ ${_formatCurrency(entry.key.value * entry.value)}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                   ],
                 ),
               );
@@ -122,14 +114,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Total a cobrar:',
-                    style:
-                        TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                Text('\$ ${_formatCurrency(_cartTotalValue)}',
-                    style: const TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.green)),
+                const Text('Total a cobrar:', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                Text('\$ ${_formatCurrency(_cartTotalValue)}', 
+                    style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.green)),
               ],
             ),
           ],
@@ -146,11 +133,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF6642F8),
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              child: const Text('COBRAR E IMPRIMIR',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+              child: const Text('COBRAR E IMPRIMIR', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
             ),
           ),
         ],
@@ -190,8 +175,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     }
 
     int successfulPrints = 0;
-    int failedPrints = 0;
-    bool usbPermissionPending = false;
 
     for (final entry in cartCopy.entries) {
       final product = entry.key;
@@ -199,13 +182,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
       for (int i = 0; i < quantity; i++) {
         final currentUserId = ref.read(authProvider).user?.id ?? 1;
-        await ref
-            .read(qrPurchaseProvider.notifier)
-            .purchase(product: product, cashierId: currentUserId);
+        await ref.read(qrPurchaseProvider.notifier).purchase(product: product, cashierId: currentUserId);
 
         final qrState = ref.read(qrPurchaseProvider);
-        if (qrState.status == QrPurchaseStatus.success &&
-            qrState.result != null) {
+        if (qrState.status == QrPurchaseStatus.success && qrState.result != null) {
           final result = qrState.result!;
           successfulPrints++;
 
@@ -213,36 +193,28 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             final pmrLabel = (product.pmr) ? ' [PMR]' : '';
             final storage = ref.read(localStorageProvider);
             final posName = await storage.getPosLocationName();
-            final branchName =
-                posName ?? ref.read(authProvider).user?.branchName;
+            final branchName = posName ?? ref.read(authProvider).user?.branchName;
 
             final posLocationId = await storage.getPosLocationId();
-            final serialNumber =
-                result.rawData['serial_number'] as String? ?? 'N/A';
+            final serialNumber = result.rawData['serial_number'] as String? ?? 'N/A';
 
             final db = await DatabaseHelper.instance.database;
             final userRows = await db.query('users', limit: 1);
             final cashierName = ref.read(authProvider).user?.name ?? 'Operador';
-            final cashierId = currentUserId.toString();
+            final cashierCode = (ref.read(authProvider).user?.email ?? '01').split('@').first;
 
-            final printResult =
-                await ref.read(printerServiceProvider).printTicket(
-                      transactionId: serialNumber,
-                      amount: product.value,
-                      qrData: result.qrCode,
-                      cashierName: cashierName,
-                      cashierId: cashierId,
-                      posLocationId: posLocationId,
-                      branchName: branchName,
-                      productName: '${product.productName}$pmrLabel',
-                    );
+            final printResult = await ref.read(printerServiceProvider).printTicket(
+                  transactionId: serialNumber,
+                  amount: product.value,
+                  qrData: result.qrCode,
+                  cashierName: cashierName,
+                  cashierCode: cashierCode,
+                  posLocationId: posLocationId,
+                  branchName: branchName,
+                  productName: '${product.productName}$pmrLabel',
+                );
             if (printResult == true) {
-              await ref
-                  .read(salesHistoryProvider.notifier)
-                  .markAsPrinted(result.transactionId, 1);
-            } else {
-              failedPrints++;
-              if (printResult == null) usbPermissionPending = true;
+              await ref.read(salesHistoryProvider.notifier).markAsPrinted(result.transactionId, 1);
             }
           }
         } else {
@@ -263,15 +235,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
     _loadBalance();
     ref.read(salesHistoryProvider.notifier).fetchHistory();
-
-    if (failedPrints > 0 && mounted) {
-      // Refrescar el icono de impresora: el fallo pudo deberse a una desconexión
-      ref.read(systemStatusProvider.notifier).checkPrinterNow();
-      final msg = usbPermissionPending
-          ? 'Acepta el permiso USB de la impresora y reimprime los tiquetes desde el historial.'
-          : '$failedPrints tiquete(s) NO se imprimieron. Verifica la impresora y reimprime desde el historial.';
-      _showSnackBar(msg, Icons.print_disabled_rounded, Colors.orange);
-    }
   }
 
   void _showInsufficientBalanceDialog(String message) {
@@ -339,12 +302,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   onPressed: () => Navigator.pop(ctx),
                   style: TextButton.styleFrom(
                     foregroundColor: Colors.grey.shade800,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
-                  child: const Text('CANCELAR',
-                      style:
-                          TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  child: const Text('CANCELAR', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                 ),
               ),
               const SizedBox(width: 8),
@@ -356,8 +316,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       context: context,
                       barrierDismissible: false,
                       builder: (_) => const Center(
-                          child: CircularProgressIndicator(
-                              color: Color(0xFF6642F8))),
+                          child: CircularProgressIndicator(color: Color(0xFF6642F8))),
                     );
                     await ref.read(authProvider.notifier).logout();
                     if (mounted) {
@@ -368,12 +327,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.redAccent,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
-                  child: const Text('SALIR',
-                      style:
-                          TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  child: const Text('SALIR', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                 ),
               ),
               const SizedBox(width: 8),
@@ -389,12 +345,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.orange,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
-                  child: const Text('CERRAR CAJA',
-                      style:
-                          TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  child: const Text('CERRAR CAJA', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                 ),
               ),
             ],
@@ -410,10 +363,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         content: Row(children: [
           Icon(icon, color: Colors.white, size: 32),
           const SizedBox(width: 16),
-          Expanded(
-              child: Text(message,
-                  style: const TextStyle(
-                      fontSize: 20, fontWeight: FontWeight.bold)))
+          Expanded(child: Text(message, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)))
         ]),
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
@@ -506,8 +456,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           if (systemStatus.pendingTransactions > 0)
             Center(
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                     color: Colors.orange,
                     borderRadius: BorderRadius.circular(16)),
@@ -559,8 +508,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             BottomNavigationBarItem(
                 icon: Icon(Icons.inbox_rounded), label: 'Cierre'),
             BottomNavigationBarItem(
-                icon: Icon(Icons.logout_rounded, color: Colors.redAccent),
-                label: 'Cerrar Sesión')
+                icon: Icon(Icons.logout_rounded, color: Colors.redAccent), label: 'Cerrar Sesión')
           ],
         ),
       ),
@@ -576,24 +524,21 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         children: [
           Row(
             children: [
+
               Expanded(
                 flex: 3, // Mayor flex para que sea más grande
                 child: ElevatedButton.icon(
                   onPressed: _cart.isEmpty ? null : _showCartSummaryDialog,
                   icon: const Icon(Icons.payment_rounded, size: 28),
-                  label: Text(
-                      'Confirmar Pago (\$ ${_formatCurrency(_cartTotalValue)})',
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold)),
+                  label: Text('Confirmar Pago (\$ ${_formatCurrency(_cartTotalValue)})', 
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF6642F8),
                     foregroundColor: Colors.white,
                     disabledBackgroundColor: Colors.grey.shade300,
                     disabledForegroundColor: Colors.grey,
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 32), // 30% más grande en altura
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
+                    padding: const EdgeInsets.symmetric(vertical: 32), // 30% más grande en altura
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     elevation: _cart.isEmpty ? 0 : 4,
                   ),
                 ),
@@ -609,15 +554,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       });
                     },
                     icon: const Icon(Icons.delete_sweep_rounded),
-                    label: const Text('Limpiar',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 14)),
+                    label: const Text('Limpiar', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blueGrey,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 24),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       elevation: 2,
                     ),
                   ),
@@ -644,10 +586,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   color: Colors.redAccent,
                   onPressed: () async {
                     if (!ref.read(systemStatusProvider).isInternetConnected) {
-                      _showSnackBar(
-                          'Estamos fuera de linea, guardaremos tu reporte para enviarlo una vez el dispositivo tenga acceso a internet.',
-                          Icons.wifi_off_rounded,
-                          Colors.orange);
+                      _showSnackBar('Estamos fuera de linea, guardaremos tu reporte para enviarlo una vez el dispositivo tenga acceso a internet.', Icons.wifi_off_rounded, Colors.orange);
                       return;
                     }
                     showDialog(
@@ -697,8 +636,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     return ElevatedButton.icon(
       onPressed: onPressed,
       icon: Icon(icon, size: 24),
-      label: Text(label,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+      label: Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
       style: ElevatedButton.styleFrom(
         backgroundColor: color,
         foregroundColor: Colors.white,
@@ -730,8 +668,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                  'Ingrese la contraseña de fiscalizador para ver el recaudo:'),
+              const Text('Ingrese la contraseña de fiscalizador para ver el recaudo:'),
               const SizedBox(height: 15),
               TextField(
                 obscureText: true,
@@ -829,17 +766,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               final novedad = novelties[index];
               return ListTile(
                 title: Text(novedad.name,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 22)),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22)),
                 trailing:
                     const Icon(Icons.chevron_right_rounded, color: Colors.grey),
                 onTap: () async {
                   Navigator.pop(ctx);
                   if (!ref.read(systemStatusProvider).isInternetConnected) {
-                    _showSnackBar(
-                        'Estamos fuera de linea, guardaremos tu reporte para enviarlo una vez el dispositivo tenga acceso a internet.',
-                        Icons.wifi_off_rounded,
-                        Colors.orange);
+                    _showSnackBar('Estamos fuera de linea, guardaremos tu reporte para enviarlo una vez el dispositivo tenga acceso a internet.', Icons.wifi_off_rounded, Colors.orange);
                     return;
                   }
 
@@ -870,12 +803,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ElevatedButton(
               onPressed: () => Navigator.pop(ctx),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF6642F8),
-                foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  backgroundColor: const Color(0xFF6642F8),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
               child: const Text('CERRAR',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
@@ -984,8 +915,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Se retiró el título y el ícono a petición del usuario para ahorrar espacio vertical
-          if (productsState.status == ProductsStatus.error &&
-              productsState.products.isEmpty)
+          if (productsState.status == ProductsStatus.error && productsState.products.isEmpty)
             Text(productsState.errorMessage ?? 'Error al cargar tarifas',
                 style: const TextStyle(color: Colors.redAccent))
           else
@@ -1048,15 +978,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       borderRadius: BorderRadius.circular(12),
       child: Container(
         width: 250, // Tarjetas de tarifa más grandes
-        padding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 16), // Padding reducido para compensar letras grandes
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16), // Padding reducido para compensar letras grandes
         decoration: BoxDecoration(
           color: isSelected ? iconColor.withOpacity(0.05) : Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-              color: isSelected ? iconColor : Colors.grey.shade200,
-              width: isSelected ? 2 : 1),
+          border: Border.all(color: isSelected ? iconColor : Colors.grey.shade200, width: isSelected ? 2 : 1),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.02),
@@ -1094,32 +1020,25 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   InkWell(
                     onTap: () => _removeFromCart(product),
                     child: Container(
-                      padding: const EdgeInsets.all(
-                          12), // Área de toque mucho más grande
+                      padding: const EdgeInsets.all(12), // Área de toque mucho más grande
                       decoration: BoxDecoration(
                           color: Colors.redAccent.withOpacity(0.1),
                           shape: BoxShape.circle),
-                      child: const Icon(Icons.remove,
-                          color: Colors.redAccent,
-                          size: 36), // Icono más grande
+                      child: const Icon(Icons.remove, color: Colors.redAccent, size: 36), // Icono más grande
                     ),
                   ),
                   Text(
                     quantity.toString(),
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 28), // Número más grande
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 28), // Número más grande
                   ),
                   InkWell(
                     onTap: () => _addToCart(product),
                     child: Container(
-                      padding: const EdgeInsets.all(
-                          12), // Área de toque mucho más grande
+                      padding: const EdgeInsets.all(12), // Área de toque mucho más grande
                       decoration: BoxDecoration(
                           color: Colors.green.withOpacity(0.1),
                           shape: BoxShape.circle),
-                      child: const Icon(Icons.add,
-                          color: Colors.green, size: 36), // Icono más grande
+                      child: const Icon(Icons.add, color: Colors.green, size: 36), // Icono más grande
                     ),
                   ),
                 ],
@@ -1188,12 +1107,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final hasDecimals = value % 1 != 0;
     if (hasDecimals) {
       final parts = value.toStringAsFixed(2).split('.');
-      final intPart = parts[0].replaceAllMapped(
-          RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+      final intPart = parts[0].replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
       return '$intPart.${parts[1]}';
     } else {
-      return value.toStringAsFixed(0).replaceAllMapped(
-          RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+      return value.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
     }
   }
 
@@ -1214,8 +1131,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final sessionQuery = await db.query('sessions',
         where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
     final sessionId = sessionQuery.isNotEmpty ? sessionQuery.first['id'] : null;
-    final posLocationId =
-        await ref.read(localStorageProvider).getPosLocationId();
+    final posLocationId = await ref.read(localStorageProvider).getPosLocationId();
     final cashierId = ref.read(authProvider).user?.id ?? 1;
 
     final random = math.Random();
