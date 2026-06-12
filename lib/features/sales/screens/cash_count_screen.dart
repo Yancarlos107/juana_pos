@@ -64,8 +64,12 @@ class _CashCountScreenState extends ConsumerState<CashCountScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.white,
+      builder: (ctx) {
+        bool isArrastre = false;
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
@@ -80,10 +84,27 @@ class _CashCountScreenState extends ConsumerState<CashCountScreen> {
         ),
         content: Padding(
           padding: const EdgeInsets.symmetric(vertical: 20),
-          child: Text(
-            'Valor: \$${currentTotal.toStringAsFixed(2)} USD',
-            style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Valor: \$${currentTotal.toStringAsFixed(2)} USD',
+                style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              SwitchListTile(
+                title: const Text('Arrastre', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                subtitle: const Text('Imprime el consolidado global de todo el día', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                value: isArrastre,
+                activeColor: const Color(0xFF6642F8),
+                onChanged: (val) {
+                  setState(() {
+                    isArrastre = val;
+                  });
+                },
+              ),
+            ],
           ),
         ),
         actions: [
@@ -113,7 +134,8 @@ class _CashCountScreenState extends ConsumerState<CashCountScreen> {
                   cashList, // Adaptado para recibir el mapa nuevo
                   currentTotal, 
                   balance,
-                  isLogout: true // SIEMPRE DEBE CERRAR SESIÓN AL ENVIAR CIERRE
+                  isLogout: true, // SIEMPRE DEBE CERRAR SESIÓN AL ENVIAR CIERRE
+                  isArrastre: isArrastre
                 );
               },
               style: ElevatedButton.styleFrom(
@@ -125,8 +147,11 @@ class _CashCountScreenState extends ConsumerState<CashCountScreen> {
             ),
           ),
         ],
-      ),
-    );
+      ); // AlertDialog
+          },
+        ); // StatefulBuilder
+      },
+    ); // showDialog
     } catch (e) {
       if (context.mounted) {
         Navigator.pop(context); // Cierra el indicador si hay error

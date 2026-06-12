@@ -214,8 +214,12 @@ class ClosingHelper {
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.white,
+      builder: (ctx) {
+        bool isArrastre = false;
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
@@ -308,6 +312,18 @@ class ClosingHelper {
                 ],
               ),
             ),
+            const SizedBox(height: 20),
+            SwitchListTile(
+              title: const Text('Arrastre', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              subtitle: const Text('Imprime el consolidado global de todo el día', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              value: isArrastre,
+              activeColor: const Color(0xFF6642F8),
+              onChanged: (val) {
+                setState(() {
+                  isArrastre = val;
+                });
+              },
+            ),
           ],
         ),
         actions: [
@@ -338,7 +354,7 @@ class ClosingHelper {
                 if (!proceed) return;
               }
 
-              _performClosing(context, ref, isLogout);
+              _performClosing(context, ref, isLogout, isArrastre: isArrastre);
             },
             icon: const Icon(Icons.print_rounded, size: 20),
             label: Text(isLogout ? 'CERRAR E IMPRIMIR' : 'CONFIRMAR', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
@@ -351,8 +367,11 @@ class ClosingHelper {
             ),
           ),
         ],
-      ),
-    );
+      ); // AlertDialog
+          },
+        ); // StatefulBuilder
+      },
+    ); // showDialog
   }
 
   static Future<bool> _showPrinterWarningDialog(BuildContext context) async {
@@ -408,7 +427,7 @@ class ClosingHelper {
     dynamic cashList, 
     double totalCash, 
     double balance, 
-    {bool isLogout = false}
+    {bool isLogout = false, bool isArrastre = false}
   ) async {
     showDialog(
       context: context,
@@ -425,10 +444,10 @@ class ClosingHelper {
       if (!proceed) return;
     }
 
-    _performClosing(context, ref, isLogout, cashList: cashList, cash: totalCash, balance: balance);
+    _performClosing(context, ref, isLogout, cashList: cashList, cash: totalCash, balance: balance, isArrastre: isArrastre);
   }
 
-  static Future<void> _performClosing(BuildContext context, WidgetRef ref, bool isLogout, {dynamic cashList, double? cash, double? balance}) async {
+  static Future<void> _performClosing(BuildContext context, WidgetRef ref, bool isLogout, {dynamic cashList, double? cash, double? balance, bool isArrastre = false}) async {
     final db = await DatabaseHelper.instance.database;
     final storage = ref.read(localStorageProvider);
     final branchId = await storage.getBranchId() ?? 0;
@@ -550,6 +569,49 @@ class ClosingHelper {
 
     final posLocationId = await ref.read(localStorageProvider).getPosLocationId();
 
+    Map<String, dynamic>? daySummary;
+    if (isArrastre) {
+      final allSales = await db.query(
+        'transactions', 
+        where: 'session_id = ? AND product_id != ? AND product_id != ?', 
+        whereArgs: [sessionId, 'CIERRE DE CAJA', 'APERTURA DE CAJA']
+      );
+      
+      int dayCount = 0;
+      double dayTotalAmount = 0;
+      Map<String, int> dayBreakdownQty = {};
+      Map<String, double> dayBreakdownTotal = {};
+      
+      for (final sale in allSales) {
+        if (sale['product_id'] == 'PMR') continue;
+        final amount = (sale['amount'] as num?)?.toDouble() ?? 0;
+        final productId = sale['product_id']?.toString() ?? 'Desc.';
+        dayCount++;
+        dayTotalAmount += amount;
+        dayBreakdownQty[productId] = (dayBreakdownQty[productId] ?? 0) + 1;
+        dayBreakdownTotal[productId] = (dayBreakdownTotal[productId] ?? 0) + amount;
+      }
+      
+      List<String> dayBreakdownLines = [];
+      dayBreakdownQty.forEach((pId, qty) {
+        final prod = productsState.products.firstWhere((p) => p.id == pId,
+            orElse: () => Product(id: pId, productName: 'Tarifa $pId', value: 0));
+        final t = dayBreakdownTotal[pId] ?? 0;
+        final qtyStr = '${qty}x'.padRight(4);
+        final nameStr = prod.productName.length > 15
+            ? prod.productName.substring(0, 15)
+            : prod.productName.padRight(15);
+        final valStr = '\$${formatCurrency(t)}'.padLeft(8);
+        dayBreakdownLines.add('$qtyStr $nameStr $valStr');
+      });
+
+      daySummary = {
+        'totalTransactions': dayCount,
+        'totalAmount': dayTotalAmount,
+        'breakdown': dayBreakdownLines
+      };
+    }
+
     final printer = ref.read(printerServiceProvider);
     final printResult = await printer.printClosingTicket(
       cashierName: cashierName,
@@ -568,6 +630,7 @@ class ClosingHelper {
       cashList: cashList,
       cash: cash,
       balance: balance,
+      daySummary: daySummary,
     );
 
     if (printResult == null && context.mounted) {

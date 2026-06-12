@@ -437,6 +437,7 @@ class PrinterService {
     dynamic cashList,
     double? cash,
     double? balance,
+    Map<String, dynamic>? daySummary,
     dynamic context,
   }) async {
     bool? success = await _printClosingTicketInternal(
@@ -457,6 +458,7 @@ class PrinterService {
       cash: cash,
       balance: balance,
       context: context,
+      daySummary: daySummary,
     );
     if (success == false) {
       print('DEBUG: Fallo primer intento de cierre, reintentando en 500ms...');
@@ -479,6 +481,7 @@ class PrinterService {
         cash: cash,
         balance: balance,
         context: context,
+        daySummary: daySummary,
       );
     }
     return success;
@@ -502,6 +505,7 @@ class PrinterService {
     double? cash,
     double? balance,
     dynamic context,
+    Map<String, dynamic>? daySummary,
   }) async {
     print('DEBUG: Iniciando impresión de CIERRE (Conexión forzada)...');
     try {
@@ -598,6 +602,36 @@ class PrinterService {
           bytes.addAll(_text('\n\n'));
         }
         // Si hay sobrante (balance > 0), no se imprime visualmente por petición del cliente.
+      }
+
+      if (daySummary != null) {
+        bytes.addAll(_text('\n------------------------------\n'));
+        bytes.addAll([0x1B, 0x61, 0x01]); // Centrado
+        bytes.addAll([0x1B, 0x45, 0x01]); // Bold
+        bytes.addAll(_text('RESUMEN DEL DIA\n'));
+        bytes.addAll([0x1B, 0x45, 0x00]); // No Bold
+        bytes.addAll([0x1B, 0x61, 0x00]); // Left
+        bytes.addAll(_text('------------------------------\n'));
+        
+        final tTrans = daySummary['totalTransactions'] ?? 0;
+        bytes.addAll(_text('Transacciones Totales: $tTrans\n\n'));
+        
+        final List<String> dBreakdown = daySummary['breakdown'] ?? [];
+        if (dBreakdown.isNotEmpty) {
+          bytes.addAll([0x1B, 0x61, 0x00]); // Left
+          for (final line in dBreakdown) {
+            bytes.addAll(_text('$line\n'));
+          }
+          bytes.addAll(_text('\n'));
+        }
+
+        final double dTotal = daySummary['totalAmount'] ?? 0.0;
+        bytes.addAll([0x1B, 0x45, 0x01]); // Bold
+        bytes.addAll([0x1D, 0x21, 0x10]); // Doble ancho
+        bytes.addAll(_text('TOTAL: \\$${CurrencyFormatter.format(dTotal)}\n\n'));
+        bytes.addAll([0x1D, 0x21, 0x00]); // Normal
+        bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
+        bytes.addAll(_text('------------------------------\n'));
       }
 
       bytes.addAll([0x1B, 0x64, 0x04]); // Feed 4 lines para asegurar que salga del cabezal

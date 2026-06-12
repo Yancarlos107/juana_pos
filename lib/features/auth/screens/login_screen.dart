@@ -71,8 +71,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final db = await DatabaseHelper.instance.database;
       final result = await db.query(
         'transactions',
-        where: 'is_closed = 0 AND product_id != ?',
-        whereArgs: ['CIERRE DE CAJA'],
+        where: 'is_closed = 0 AND product_id != ? AND product_id != ?',
+        whereArgs: ['CIERRE DE CAJA', 'APERTURA DE CAJA'],
         limit: 1,
       );
       if (mounted) {
