@@ -354,6 +354,7 @@ class PrinterService {
     required double totalAmount,
     required List<Map<String, dynamic>> products,
     required String cashierName,
+    String? reviewerName,
   }) async {
     print('DEBUG: Iniciando impresión de ARQUEO...');
     try {
@@ -393,7 +394,11 @@ class PrinterService {
       bytes.addAll(_text('FALTANTE:___________\n\n\n'));
 
       bytes.addAll(_text('Fiscalizador:\n'));
-      bytes.addAll(_text('Nombre:____________________\n'));
+      if (reviewerName != null && reviewerName.isNotEmpty) {
+        bytes.addAll(_text('Nombre: $reviewerName\n'));
+      } else {
+        bytes.addAll(_text('Nombre:____________________\n'));
+      }
       bytes.addAll(_text('Firma:_______________________\n\n\n'));
 
       bytes.addAll(_text('Cajero:\n'));
@@ -628,7 +633,7 @@ class PrinterService {
         final double dTotal = daySummary['totalAmount'] ?? 0.0;
         bytes.addAll([0x1B, 0x45, 0x01]); // Bold
         bytes.addAll([0x1D, 0x21, 0x10]); // Doble ancho
-        bytes.addAll(_text('TOTAL: \\$${CurrencyFormatter.format(dTotal)}\n\n'));
+        bytes.addAll(_text('TOTAL: \\\$${CurrencyFormatter.format(dTotal)}\n\n'));
         bytes.addAll([0x1D, 0x21, 0x00]); // Normal
         bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
         bytes.addAll(_text('------------------------------\n'));
