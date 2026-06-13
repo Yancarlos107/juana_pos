@@ -53,13 +53,20 @@ lib/
 │   ├── database/        -> DatabaseHelper.dart (Esquema SQLite y Migraciones)
 │   ├── storage/         -> LocalStorageRepository.dart (SharedPreferences)
 │   ├── network/         -> DioClient.dart (Configuración de Headers y Token)
+│   ├── services/        -> KioskService.dart (Modo kiosco: Lock Task / Device Owner)
+│   ├── widgets/         -> KioskLogoButton.dart (Acceso admin: 3 taps + PIN)
 │   └── utils/           -> Utilidades como DeviceUtils (MAC address)
 ├── features/
 │   ├── auth/            -> Pantallas de Login y Selección de Sucursal, AuthService.
 │   ├── sales/           -> Dashboard, Recaudo, Ventas, ClosingHelper.
 │   ├── sync/            -> InitScreen, InitService, BackgroundSyncService.
 │   └── printer/         -> PrinterService (Conexión hardware USB Host), TicketWidget.
-└── main.dart            -> Punto de entrada, inicialización de Riverpod y Rutas.
+└── main.dart            -> Punto de entrada, Riverpod, Rutas y activación del kiosco.
+
+android/app/src/main/
+├── kotlin/.../MainActivity.kt            -> Canales nativos: impresión USB y kiosco (co.Juana.kiosk)
+├── kotlin/.../KioskDeviceAdminReceiver.kt -> Receiver para aprovisionar como Device Owner
+└── res/xml/device_admin.xml              -> Políticas de administración del dispositivo
 ```
 
 ---
@@ -127,3 +134,56 @@ El motor de sincronización traduce los registros de SQLite a JSON POST endpoint
 | **RC171** | `'INGRESO_FISCALIZADOR'`| `/pos-transactions` | Log de auditoría silente. Indica que el supervisor revisó la caja. |
 
 Si debes crear un nuevo evento hacia el servidor (Ej: un "Retiro de Efectivo"), debes asignarle un nuevo `product_id` en SQLite, crear su Trama RC17X en el `BackgroundSyncService` y asegurarte de ocultarlo en los listados visuales si no representa una venta directa.
+
+---
+
+## 8. Modo Kiosco Real (Device Owner + Lock Task Mode)
+
+La tablet debe ser inviolable para el taquillero: no puede salir de la app, ni revelar las barras del sistema, ni modificar el dispositivo.
+
+### Las dos capas de bloqueo
+
+| Capa | Mecanismo | Qué hace |
+| :--- | :--- | :--- |
+| **Visual** | `SystemUiMode.immersiveSticky` (main.dart) + `category.HOME` (Manifest) | Oculta las barras y hace la app launcher. **Insuficiente sola:** un swipe en los bordes revela las barras. |
+| **Real** | **Lock Task Mode** con la app como **Device Owner** | Bloquea de verdad la barra de estado, la de navegación, los gestos, Home y Recientes. Sin escape posible. |
+
+### Componentes
+
+- **`KioskDeviceAdminReceiver.kt`** (+ `device_admin.xml` + receiver en Manifest): habilita el aprovisionamiento como Device Owner.
+- **Canal nativo `co.Juana.kiosk`** (MainActivity.kt): `isDeviceOwner`, `isInKioskMode`, `startKiosk`, `stopKiosk`, `clearDeviceOwner`.
+- **`KioskService`** (Dart, `core/services/`): wrapper del canal. **Degrada de forma segura**: si la tablet no está aprovisionada, todos los métodos son no-op y retornan `false` (el desarrollo en emulador no se ve afectado).
+- **`main.dart`**: llama `KioskService.start()` tras el primer frame. La app entra sola al kiosco en cada arranque.
+- **Menú admin** (`KioskLogoButton`: 3 taps en el logo + PIN `9999`, en LoginScreen): *Ajustes del Sistema* (sale del kiosco primero — el lock task bloquea abrir Settings), *Exportar Tramas*, *Activar Modo Kiosco* y *Liberar Dispositivo*.
+
+### Aprovisionamiento (una vez por tablet)
+
+La tablet **no debe tener cuentas Google añadidas**. Con ADB (USB o inalámbrico):
+
+```
+adb shell dpm set-device-owner co.Juana.red_recarga_pos/.KioskDeviceAdminReceiver
+```
+
+Alternativa sin PC: **aprovisionamiento por QR** en tablet recién reseteada (6 taps en la pantalla de bienvenida → escanear QR con la URL del APK y el checksum de firma). El estado de Device Owner sobrevive a actualizaciones y reinicios.
+
+### Procedimientos operativos (soporte técnico)
+
+| Necesidad | Procedimiento |
+| :--- | :--- |
+| **Actualizar versión** | NO se quita nada. PIN → salir del kiosco → instalar APK (o `adb install -r` directo, ADB no está bloqueado por el kiosco). |
+| **Mantenimiento / Ajustes** | PIN → "Ajustes del Sistema". Al terminar: PIN → "Activar Modo Kiosco". |
+| **Desinstalar o bajar versión** | PIN → "Liberar Dispositivo" (la app deja de ser Device Owner) → desinstalar → instalar → re-aprovisionar por ADB. |
+| **Tablet bloqueada sin PIN** | ADB inalámbrico si quedó activo; última instancia: factory reset por recovery (Vol + Power) y re-enrolar. |
+
+### ⚠️ Conflicto conocido: permiso USB de la impresora
+
+El lock task **suprime los diálogos del sistema**, incluido el de permiso USB (`UsbManager.requestPermission`) y el de asociación al conectar la impresora. Sin ese permiso la impresión falla en silencio.
+
+**Solución obligatoria al enrolar cada tablet:** estando FUERA del kiosco, desconectar y reconectar la impresora Epson, y en el diálogo "¿Abrir Juana cuando se conecte este dispositivo USB?" marcar **"Usar siempre"**. Con esa asociación, Android otorga el permiso automáticamente sin diálogo en cada conexión y arranque, incluso dentro del kiosco. (El match del dispositivo está en `res/xml/device_filter.xml`, VID 1208 = Epson.)
+
+### Reglas para no romper el kiosco
+
+1. **No desactivar la Depuración USB/inalámbrica** en las tablets: es la puerta de mantenimiento.
+2. El PIN admin está hardcodeado en `KioskLogoButton` (`'9999'`): es la única llave en campo. *Mejora pendiente: moverlo a configuración remota (cashier-initialize).*
+3. Si agregas un flujo que necesite abrir una app o diálogo externo (cámara, archivos, otra activity), recuerda que **el lock task lo bloqueará**: debe pasar por `KioskService.stop()` primero o agregarse el paquete a `setLockTaskPackages`.
+4. *Mejora pendiente: timeout defensivo en `printViaUsbDirect` para que una impresión sin permiso USB responda error en vez de quedar colgada.*
