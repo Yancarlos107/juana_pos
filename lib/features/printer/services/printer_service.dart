@@ -12,6 +12,9 @@ import 'epson_epos_service.dart';
 /// Detecta automáticamente si hay una impresora Epson (vendor 0x04B8) y usa
 /// USB Host API directo. Para otras impresoras usa flutter_thermal_printer.
 class PrinterService {
+  /// Fondo de caja fijo, informativo en los tiquetes (no afecta cálculos de cuadre).
+  static const double _kFondoCaja = 5.00;
+
   final FlutterThermalPrinter _printer = FlutterThermalPrinter.instance;
   final EpsonEposService _epsonService = EpsonEposService();
   Printer? _connectedPrinter;
@@ -421,7 +424,11 @@ class PrinterService {
       bytes.addAll([0x1B, 0x61, 0x00]); // Izquierda
       bytes.addAll([0x1D, 0x21, 0x10]); // Doble ancho
       bytes.addAll(
-          _text('TOTAL: \$${CurrencyFormatter.format(totalAmount)}\n\n'));
+          _text('SUBTOTAL: \$${CurrencyFormatter.format(totalAmount)}\n'));
+      bytes.addAll(
+          _text('FONDO: \$${CurrencyFormatter.format(_kFondoCaja)}\n'));
+      bytes.addAll(_text(
+          'TOTAL: \$${CurrencyFormatter.format(totalAmount + _kFondoCaja)}\n\n'));
       bytes.addAll([0x1D, 0x21, 0x00]); // Normal
       bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
 
@@ -602,9 +609,12 @@ class PrinterService {
       bytes.addAll([0x1B, 0x45, 0x01]); // Bold
       bytes.addAll([0x1B, 0x61, 0x00]); // Left
       bytes.addAll([0x1D, 0x21, 0x10]); // Doble ancho
-      bytes
-          .addAll(_text('TOTAL: \$${CurrencyFormatter.format(totalAmount)}\n'));
-      bytes.addAll(_text('FONDO: \$5.00\n\n'));
+      bytes.addAll(
+          _text('SUBTOTAL: \$${CurrencyFormatter.format(totalAmount)}\n'));
+      bytes.addAll(
+          _text('FONDO: \$${CurrencyFormatter.format(_kFondoCaja)}\n'));
+      bytes.addAll(_text(
+          'TOTAL: \$${CurrencyFormatter.format(totalAmount + _kFondoCaja)}\n\n'));
       bytes.addAll([0x1D, 0x21, 0x00]); // Normal
       bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
 
@@ -678,8 +688,12 @@ class PrinterService {
         final double dTotal = daySummary['totalAmount'] ?? 0.0;
         bytes.addAll([0x1B, 0x45, 0x01]); // Bold
         bytes.addAll([0x1D, 0x21, 0x10]); // Doble ancho
-        bytes.addAll(_text('TOTAL: \$${CurrencyFormatter.format(dTotal)}\n'));
-        bytes.addAll(_text('FONDO: \$5.00\n\n'));
+        bytes.addAll(
+            _text('SUBTOTAL: \$${CurrencyFormatter.format(dTotal)}\n'));
+        bytes.addAll(
+            _text('FONDO: \$${CurrencyFormatter.format(_kFondoCaja)}\n'));
+        bytes.addAll(_text(
+            'TOTAL: \$${CurrencyFormatter.format(dTotal + _kFondoCaja)}\n\n'));
       }
 
       bytes.addAll([
