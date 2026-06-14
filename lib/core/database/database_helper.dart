@@ -5,7 +5,7 @@ import 'package:path_provider/path_provider.dart';
 
 class DatabaseHelper {
   static const _databaseName = "JuanaPos.db";
-  static const _databaseVersion = 14;
+  static const _databaseVersion = 15;
 
   // Singleton class
   DatabaseHelper._privateConstructor();
@@ -123,6 +123,10 @@ class DatabaseHelper {
       await db.execute('ALTER TABLE users ADD COLUMN is_reviewer INTEGER DEFAULT 0');
       await db.execute('ALTER TABLE users ADD COLUMN reviewer_code TEXT');
     }
+    if (oldVersion < 15) {
+      // Migración v14 → v15: Add reviewer_id
+      await db.execute('ALTER TABLE transactions ADD COLUMN reviewer_id INTEGER');
+    }
   }
 
   Future _onCreate(Database db, int version) async {
@@ -181,7 +185,8 @@ class DatabaseHelper {
         plot_id TEXT,
         server_id INTEGER,
         mac_address TEXT,
-        serial_number TEXT
+        serial_number TEXT,
+        reviewer_id INTEGER
       )
     ''');
 

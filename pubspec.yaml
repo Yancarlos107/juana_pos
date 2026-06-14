@@ -49,6 +49,8 @@ dependencies:
   flutter_thermal_printer: 2.0.1
   crypto: ^3.0.3
   geolocator: ^13.0.1
+  barcode_scan2: ^4.3.1
+  pointycastle: ^3.9.1
 
 dev_dependencies:
   flutter_test:

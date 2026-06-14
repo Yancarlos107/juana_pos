@@ -10,6 +10,7 @@ import '../../auth/providers/auth_providers.dart';
 import '../../auth/services/session_service.dart';
 import '../../../core/storage/local_storage_repository.dart';
 import '../../../core/network/dio_client.dart';
+import 'package:sqflite/sqflite.dart';
 import '../../../core/database/database_helper.dart';
 import '../../../core/utils/device_utils.dart';
 import '../models/tarifa_model.dart';
@@ -100,6 +101,63 @@ class ClosingHelper {
     );
   }
 
+  /// Construye el RESUMEN DEL DIA (consolidado "arrastre") a partir de todas
+  /// las transacciones de la sesión, igual que en el Cierre de Caja.
+  static Future<Map<String, dynamic>> _buildDaySummary(
+    Database db,
+    int sessionId,
+    ProductsState productsState, {
+    dynamic cashList,
+    double? cash,
+    double? balance,
+  }) async {
+    final allSales = await db.query(
+      'transactions',
+      where: 'session_id = ? AND product_id != ? AND product_id != ? AND product_id != ?',
+      whereArgs: [sessionId, 'CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR']
+    );
+
+    int dayCount = 0;
+    double dayTotalAmount = 0;
+    Map<String, int> dayBreakdownQty = {};
+    Map<String, double> dayBreakdownTotal = {};
+
+    for (final sale in allSales) {
+      if (sale['product_id'] == 'PMR') continue;
+      final amount = (sale['amount'] as num?)?.toDouble() ?? 0;
+      final productId = sale['product_id']?.toString() ?? 'Desc.';
+      dayCount++;
+      dayTotalAmount += amount;
+      dayBreakdownQty[productId] = (dayBreakdownQty[productId] ?? 0) + 1;
+      dayBreakdownTotal[productId] = (dayBreakdownTotal[productId] ?? 0) + amount;
+    }
+
+    List<String> dayBreakdownLines = [];
+    dayBreakdownQty.forEach((pId, qty) {
+      final prod = productsState.products.firstWhere((p) => p.id == pId,
+          orElse: () => Product(id: pId, productName: 'Tarifa $pId', value: 0));
+      final t = dayBreakdownTotal[pId] ?? 0;
+      final qtyStr = '${qty}x'.padRight(4);
+      final nameStr = prod.productName.length > 15
+          ? prod.productName.substring(0, 15)
+          : prod.productName.padRight(15);
+      final valStr = '\$${formatCurrency(t)}'.padLeft(8);
+      dayBreakdownLines.add('$qtyStr $nameStr $valStr');
+    });
+
+    final daySummary = <String, dynamic>{
+      'totalTransactions': dayCount,
+      'totalAmount': dayTotalAmount,
+      'breakdown': dayBreakdownLines,
+    };
+
+    if (cashList != null && cash != null && balance != null) {
+      daySummary['balance'] = balance;
+    }
+
+    return daySummary;
+  }
+
   static Future<void> printArqueoTicket(BuildContext context, WidgetRef ref) async {
     showDialog(
       context: context,
@@ -111,7 +169,7 @@ class ClosingHelper {
       final db = await DatabaseHelper.instance.database;
       final storage = ref.read(localStorageProvider);
       final branchId = await storage.getBranchId() ?? 0;
-      
+
       final sessionQuery = await db.query('sessions', where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
       if (sessionQuery.isEmpty) {
         if (context.mounted) Navigator.pop(context);
@@ -122,8 +180,8 @@ class ClosingHelper {
       final currentCashierId = ref.read(authProvider).user?.id ?? 1;
       final sessionId = sessionQuery.first['id'] as int;
       final unclosedSales = await db.query(
-        'transactions', 
-        where: 'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id != ? AND product_id != ?', 
+        'transactions',
+        where: 'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id != ? AND product_id != ?',
         whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA']
       );
 
@@ -148,7 +206,7 @@ class ClosingHelper {
 
       final productsState = ref.read(productsProvider);
       List<Map<String, dynamic>> productList = [];
-      
+
       breakdownQty.forEach((pId, qty) {
         final prod = productsState.products.firstWhere((p) => p.id == pId,
             orElse: () => Product(id: pId, productName: 'Tarifa $pId', value: 0));
@@ -159,6 +217,83 @@ class ClosingHelper {
         });
       });
 
+      final cashierName = ref.read(authProvider).user?.name ?? 'Operador';
+      final reviewerName = ref.read(reviewerNameProvider);
+      if (context.mounted) Navigator.pop(context); // Cerrar loader ANTES del diálogo de confirmación
+
+      if (!context.mounted) return;
+
+      bool isArrastre = false;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) {
+          return StatefulBuilder(
+            builder: (context, setState) {
+              return AlertDialog(
+                backgroundColor: Colors.white,
+                surfaceTintColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                title: const Row(
+                  children: [
+                    Icon(Icons.fact_check_rounded, color: Colors.blueGrey),
+                    SizedBox(width: 10),
+                    Text('Arqueo de Caja', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 24)),
+                  ],
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('¿Deseas imprimir el arqueo de caja?', style: TextStyle(color: Colors.grey)),
+                    if (reviewerName == null) ...[
+                      const SizedBox(height: 12),
+                      SwitchListTile(
+                        title: const Text('Arrastre', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                        subtitle: const Text('Imprime el consolidado global de todo el día', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                        value: isArrastre,
+                        activeColor: const Color(0xFF6642F8),
+                        onChanged: (val) {
+                          setState(() {
+                            isArrastre = val;
+                          });
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: Text('CANCELAR', style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.bold, fontSize: 16)),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    icon: const Icon(Icons.print_rounded, size: 20),
+                    label: const Text('IMPRIMIR', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blueGrey,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+
+      if (confirmed != true) return;
+
+      if (context.mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => const Center(child: CircularProgressIndicator(color: Color(0xFF6642F8))),
+        );
+      }
+
       final isPrinterConnected = await ref.read(systemStatusProvider.notifier).checkPrinterNow();
       if (!isPrinterConnected) {
         if (context.mounted) Navigator.pop(context);
@@ -166,17 +301,25 @@ class ClosingHelper {
         return;
       }
 
-      final cashierName = ref.read(authProvider).user?.name ?? 'Operador';
-      final reviewerName = ref.read(reviewerNameProvider);
-      if (context.mounted) Navigator.pop(context); // Cerrar loader ANTES para evitar deadlock de UI con UsbManager
-      
+      final posName = await storage.getPosLocationName();
+      final branchName = posName ?? ref.read(authProvider).user?.branchName ?? 'Sucursal Juana';
+
+      Map<String, dynamic>? daySummary;
+      if (isArrastre) {
+        daySummary = await _buildDaySummary(db, sessionId, productsState);
+      }
+
+      if (context.mounted) Navigator.pop(context); // Cerrar loader antes de imprimir
+
       final printResult = await ref.read(printerServiceProvider).printArqueoTicket(
         totalAmount: totalAmount,
         products: productList,
         cashierName: cashierName,
         reviewerName: reviewerName,
+        branchName: branchName,
+        daySummary: daySummary,
       );
-      
+
       if (context.mounted) {
         if (printResult == true) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Arqueo impreso con éxito.')));
@@ -645,45 +788,8 @@ class ClosingHelper {
 
     Map<String, dynamic>? daySummary;
     if (isArrastre) {
-      final allSales = await db.query(
-        'transactions', 
-        where: 'session_id = ? AND product_id != ? AND product_id != ? AND product_id != ?', 
-        whereArgs: [sessionId, 'CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR']
-      );
-      
-      int dayCount = 0;
-      double dayTotalAmount = 0;
-      Map<String, int> dayBreakdownQty = {};
-      Map<String, double> dayBreakdownTotal = {};
-      
-      for (final sale in allSales) {
-        if (sale['product_id'] == 'PMR') continue;
-        final amount = (sale['amount'] as num?)?.toDouble() ?? 0;
-        final productId = sale['product_id']?.toString() ?? 'Desc.';
-        dayCount++;
-        dayTotalAmount += amount;
-        dayBreakdownQty[productId] = (dayBreakdownQty[productId] ?? 0) + 1;
-        dayBreakdownTotal[productId] = (dayBreakdownTotal[productId] ?? 0) + amount;
-      }
-      
-      List<String> dayBreakdownLines = [];
-      dayBreakdownQty.forEach((pId, qty) {
-        final prod = productsState.products.firstWhere((p) => p.id == pId,
-            orElse: () => Product(id: pId, productName: 'Tarifa $pId', value: 0));
-        final t = dayBreakdownTotal[pId] ?? 0;
-        final qtyStr = '${qty}x'.padRight(4);
-        final nameStr = prod.productName.length > 15
-            ? prod.productName.substring(0, 15)
-            : prod.productName.padRight(15);
-        final valStr = '\$${formatCurrency(t)}'.padLeft(8);
-        dayBreakdownLines.add('$qtyStr $nameStr $valStr');
-      });
-
-      daySummary = {
-        'totalTransactions': dayCount,
-        'totalAmount': dayTotalAmount,
-        'breakdown': dayBreakdownLines
-      };
+      daySummary = await _buildDaySummary(db, sessionId, productsState,
+          cashList: cashList, cash: cash, balance: balance);
     }
 
     if (context.mounted) Navigator.pop(context); // Quitar loader ANTES de imprimir para evitar deadlock de UI

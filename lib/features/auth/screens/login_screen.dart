@@ -21,6 +21,8 @@ import '../../../core/services/kiosk_service.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/utils/device_utils.dart';
+import '../../../core/utils/crypto_utils.dart';
+import 'package:barcode_scan2/barcode_scan2.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -200,6 +202,47 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } catch (e) {
       if (mounted) Navigator.pop(context);
     }
+  }
+
+  Future<void> _scanLoginQR() async {
+    try {
+      final result = await BarcodeScanner.scan(
+        options: const ScanOptions(
+          strings: {
+            'cancel': 'Cancelar',
+            'flash_on': 'Flash on',
+            'flash_off': 'Flash off',
+          },
+          restrictFormat: [BarcodeFormat.qr],
+        ),
+      );
+
+      if (result.type == ResultType.Barcode && result.rawContent.isNotEmpty) {
+        final scannedCode = result.rawContent;
+        try {
+          final decrypted = CryptoUtils.decryptLoginQR(scannedCode, 'juana-777');
+          final parts = decrypted.split('#');
+          if (parts.length >= 2) {
+            _emailController.text = parts[0];
+            _passwordController.text = parts[1];
+            await _login();
+          } else {
+            _showErrorSnackBar('Formato QR inválido (sin clave).');
+          }
+        } catch (e) {
+          _showErrorSnackBar('Error descifrado:\n$e');
+        }
+      }
+    } catch (e) {
+      _showErrorSnackBar('Error de cámara: $e');
+    }
+  }
+
+  void _showErrorSnackBar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
   }
 
   Future<void> _login() async {
@@ -975,6 +1018,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         surfaceTintColor: Colors.white,
+        leadingWidth: 100,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 8.0),
+          child: ElevatedButton(
+            onPressed: _scanLoginQR,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF6642F8).withOpacity(0.1),
+              foregroundColor: const Color(0xFF6642F8),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: EdgeInsets.zero,
+            ),
+            child: const Icon(Icons.qr_code_scanner, size: 45),
+          ),
+        ),
         actions: [
           IconButton(
             onPressed: _showPendingSalesModal,

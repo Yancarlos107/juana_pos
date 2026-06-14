@@ -41,7 +41,7 @@ class ClosureService {
   }
 
   /// Realiza la Apertura de Caja (RC174) en el backend
-  Future<void> openRegister(String cashierName) async {
+  Future<void> openRegister(int cashierId, String cashierName) async {
     try {
       final token = await _storage.getToken();
       if (token == null) return;
@@ -60,6 +60,7 @@ class ClosureService {
           "hw": deviceInfo['hw'],
           "ime": deviceInfo['ime'],
           "employee_full_name": cashierName,
+          "cashier_id": cashierId.toString(),
           "typ": "RC174",
           "ver": "1.0.0",
           if (posLocationId != null) "pos_location_id": posLocationId,

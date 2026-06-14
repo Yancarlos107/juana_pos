@@ -391,6 +391,8 @@ class PrinterService {
     required List<Map<String, dynamic>> products,
     required String cashierName,
     String? reviewerName,
+    String? branchName,
+    Map<String, dynamic>? daySummary,
   }) async {
     print('DEBUG: Iniciando impresión de ARQUEO...');
     try {
@@ -403,6 +405,10 @@ class PrinterService {
       bytes.addAll(_text('ARQUEO DE CAJA\n'));
       bytes.addAll([0x1D, 0x21, 0x00]); // Normal
       bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
+
+      if (branchName != null && branchName.isNotEmpty) {
+        bytes.addAll(_text('Estacion: $branchName\n\n'));
+      }
 
       final now = DateTime.now();
       final dateStr =
@@ -447,6 +453,37 @@ class PrinterService {
       bytes.addAll(_text('Cajero:\n'));
       bytes.addAll(_text('Nombre: $cashierName\n'));
       bytes.addAll(_text('Firma:_______________________\n\n\n\n'));
+
+      if (daySummary != null) {
+        bytes.addAll([0x1B, 0x61, 0x00]); // Left
+        bytes.addAll([0x1B, 0x45, 0x01]); // Bold
+        bytes.addAll(_text('RESUMEN DEL DIA\n'));
+        bytes.addAll([0x1B, 0x45, 0x00]); // No Bold
+
+        final tTrans = daySummary['totalTransactions'] ?? 0;
+        bytes.addAll(_text('Transacciones Totales: $tTrans\n\n'));
+
+        final List<String> dBreakdown = daySummary['breakdown'] ?? [];
+        if (dBreakdown.isNotEmpty) {
+          bytes.addAll([0x1B, 0x61, 0x00]); // Left
+          for (final line in dBreakdown) {
+            bytes.addAll(_text('$line\n'));
+          }
+          bytes.addAll(_text('\n'));
+        }
+
+        final double dTotal = daySummary['totalAmount'] ?? 0.0;
+        bytes.addAll([0x1B, 0x45, 0x01]); // Bold
+        bytes.addAll([0x1D, 0x21, 0x10]); // Doble ancho
+        bytes.addAll(
+            _text('SUBTOTAL: \$${CurrencyFormatter.format(dTotal)}\n'));
+        bytes.addAll(
+            _text('FONDO: \$${CurrencyFormatter.format(_kFondoCaja)}\n'));
+        bytes.addAll(_text(
+            'TOTAL: \$${CurrencyFormatter.format(dTotal + _kFondoCaja)}\n\n'));
+        bytes.addAll([0x1D, 0x21, 0x00]); // Normal
+        bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
+      }
 
       bytes.addAll([0x1B, 0x64, 0x01]); // 1 salto
       bytes.addAll([0x1D, 0x56, 0x42, 0x00]); // Cortar papel
@@ -694,6 +731,22 @@ class PrinterService {
             _text('FONDO: \$${CurrencyFormatter.format(_kFondoCaja)}\n'));
         bytes.addAll(_text(
             'TOTAL: \$${CurrencyFormatter.format(dTotal + _kFondoCaja)}\n\n'));
+        bytes.addAll([0x1D, 0x21, 0x00]); // Normal
+        bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
+
+        final double? dBalance = (daySummary['balance'] as num?)?.toDouble();
+        if (!isManualCash && dBalance != null && dBalance.abs() >= 0.01) {
+          bytes.addAll([0x1B, 0x45, 0x01]); // Bold
+          if (dBalance > 0) {
+            bytes.addAll(_text(
+                'SOBRANTE: \$${CurrencyFormatter.format(dBalance)}\n'));
+          } else {
+            bytes.addAll(_text(
+                'FALTANTE: \$${CurrencyFormatter.format(dBalance.abs())}\n'));
+          }
+          bytes.addAll([0x1B, 0x45, 0x00]); // No bold
+          bytes.addAll(_text('\n'));
+        }
       }
 
       bytes.addAll([

@@ -406,6 +406,7 @@ class BackgroundSyncService {
           "hw": deviceInfo['hw'],
           "ime": deviceInfo['ime'],
           "employee_full_name": txEmployeeName,
+          "cashier_id": txCashierId.toString(),
           "typ": "RC174",
           "ver": "1.0.0",
           if (posLocationId != null)
@@ -460,11 +461,12 @@ class BackgroundSyncService {
       // Sincronizar Ingreso de Fiscalizador (RC171)
       for (final tx in pendingSupervisorLogins) {
         final txId = tx['id'];
-        final txCashierId = tx['cashier_id'] ?? 1;
+        final txCashierId = tx['cashier_id'] ?? 1; // ID del taquillero
+        final txReviewerId = tx['reviewer_id'] ?? txCashierId; // ID del fiscalizador
 
         // Buscar nombre del fiscalizador
         final userQuery = await db.query('users',
-            where: 'id = ?', whereArgs: [txCashierId], limit: 1);
+            where: 'id = ?', whereArgs: [txReviewerId], limit: 1);
         final txEmployeeName = userQuery.isNotEmpty
             ? (userQuery.first['name'] as String? ?? "Fiscalizador")
             : "Fiscalizador";
@@ -477,7 +479,9 @@ class BackgroundSyncService {
           "lon": tx['lon']?.toString() ?? "0.0",
           "hw": deviceInfo['hw'],
           "ime": tx['mac_address']?.toString() ?? deviceInfo['ime'],
-          "employee_full_name": txEmployeeName,
+          "employee_full_name": txEmployeeName, // Nombre del Fiscalizador
+          "cashier_id": txCashierId.toString(), // Taquillero activo
+          "reviewer_id": txReviewerId.toString(), // Fiscalizador que audita
           "typ": "RC171",
           "ver": "1.0.0",
           if (posLocationId != null)

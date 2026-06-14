@@ -738,10 +738,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       
                       final localId = "OFF-RC171-${DateTime.now().microsecondsSinceEpoch}-$posLocationId";
 
+                      final currentCashierId = ref.read(authProvider).user?.id ?? 1;
+
                       await db.insert('transactions', {
                         'id': localId,
                         'session_id': sessionId,
-                        'cashier_id': reviewerId ?? 1, // Guardamos el ID del fiscalizador
+                        'cashier_id': currentCashierId, // ID del taquillero activo
+                        'reviewer_id': reviewerId, // ID del fiscalizador que audita
                         'pos_location_id': posLocationId,
                         'product_id': 'INGRESO_FISCALIZADOR',
                         'amount': 0,
