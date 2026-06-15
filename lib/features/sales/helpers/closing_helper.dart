@@ -245,20 +245,18 @@ class ClosingHelper {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text('¿Deseas imprimir el arqueo de caja?', style: TextStyle(color: Colors.grey)),
-                    if (reviewerName == null) ...[
-                      const SizedBox(height: 12),
-                      SwitchListTile(
-                        title: const Text('Arrastre', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                        subtitle: const Text('Imprime el consolidado global de todo el día', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                        value: isArrastre,
-                        activeColor: const Color(0xFF6642F8),
-                        onChanged: (val) {
-                          setState(() {
-                            isArrastre = val;
-                          });
-                        },
-                      ),
-                    ],
+                    const SizedBox(height: 12),
+                    SwitchListTile(
+                      title: const Text('Arrastre', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                      subtitle: const Text('Imprime el consolidado global de todo el día', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      value: isArrastre,
+                      activeColor: const Color(0xFF6642F8),
+                      onChanged: (val) {
+                        setState(() {
+                          isArrastre = val;
+                        });
+                      },
+                    ),
                   ],
                 ),
                 actions: [

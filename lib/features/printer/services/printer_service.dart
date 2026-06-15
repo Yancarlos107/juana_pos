@@ -689,19 +689,18 @@ class PrinterService {
         bytes.addAll(_text('\n\n'));
       }
 
-      if (!isManualCash && balance != null && balance.abs() >= 0.01) {
+      // 1. Cierre normal del taquillero (Sin arrastre)
+      if (daySummary == null && !isManualCash && balance != null && balance.abs() >= 0.01) {
         if (balance < 0) {
           // Efectivo - Sistema = Negativo -> FALTANTE
           bytes.addAll([0x1B, 0x61, 0x00]); // Left
           bytes.addAll([0x1B, 0x45, 0x01]); // Bold
-          bytes.addAll([0x1D, 0x21, 0x00]); // Normal size
           bytes.addAll(_text(
               'FALTANTE: \$${CurrencyFormatter.format(balance.abs())}\n'));
-          bytes.addAll([0x1D, 0x21, 0x00]);
-          bytes.addAll([0x1B, 0x45, 0x00]);
+          bytes.addAll([0x1B, 0x45, 0x00]); // No bold
           bytes.addAll(_text('\n\n'));
         }
-        // Si hay sobrante (balance > 0), no se imprime visualmente por petición del cliente.
+        // No se imprime el sobrante en cierre normal.
       }
 
       if (daySummary != null) {
@@ -723,6 +722,8 @@ class PrinterService {
         }
 
         final double dTotal = daySummary['totalAmount'] ?? 0.0;
+        final double totalArrastreFondo = dTotal + _kFondoCaja;
+
         bytes.addAll([0x1B, 0x45, 0x01]); // Bold
         bytes.addAll([0x1D, 0x21, 0x10]); // Doble ancho
         bytes.addAll(
@@ -730,22 +731,25 @@ class PrinterService {
         bytes.addAll(
             _text('FONDO: \$${CurrencyFormatter.format(_kFondoCaja)}\n'));
         bytes.addAll(_text(
-            'TOTAL: \$${CurrencyFormatter.format(dTotal + _kFondoCaja)}\n\n'));
+            'TOTAL: \$${CurrencyFormatter.format(totalArrastreFondo)}\n\n'));
         bytes.addAll([0x1D, 0x21, 0x00]); // Normal
         bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
 
-        final double? dBalance = (daySummary['balance'] as num?)?.toDouble();
-        if (!isManualCash && dBalance != null && dBalance.abs() >= 0.01) {
-          bytes.addAll([0x1B, 0x45, 0x01]); // Bold
-          if (dBalance > 0) {
-            bytes.addAll(_text(
-                'SOBRANTE: \$${CurrencyFormatter.format(dBalance)}\n'));
-          } else {
-            bytes.addAll(_text(
-                'FALTANTE: \$${CurrencyFormatter.format(dBalance.abs())}\n'));
+        // Solo se calcula sobrante/faltante cuando hay arrastre y si se digitó efectivo
+        if (cash != null) {
+          final double dBalance = cash - totalArrastreFondo;
+          if (dBalance.abs() >= 0.01) {
+            bytes.addAll([0x1B, 0x45, 0x01]); // Bold
+            if (dBalance > 0) {
+              bytes.addAll(_text(
+                  'SOBRANTE: \$${CurrencyFormatter.format(dBalance)}\n'));
+            } else {
+              bytes.addAll(_text(
+                  'FALTANTE: \$${CurrencyFormatter.format(dBalance.abs())}\n'));
+            }
+            bytes.addAll([0x1B, 0x45, 0x00]); // No bold
+            bytes.addAll(_text('\n'));
           }
-          bytes.addAll([0x1B, 0x45, 0x00]); // No bold
-          bytes.addAll(_text('\n'));
         }
       }
 
