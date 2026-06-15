@@ -111,25 +111,27 @@ class ClosingHelper {
     double? cash,
     double? balance,
   }) async {
-    final allSales = await db.query(
-      'transactions',
-      where: 'session_id = ? AND product_id != ? AND product_id != ? AND product_id != ?',
-      whereArgs: [sessionId, 'CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR']
-    );
+    final allSalesAgg = await db.rawQuery('''
+      SELECT product_id, COUNT(*) as qty, SUM(amount) as total_amount
+      FROM transactions
+      WHERE session_id = ? AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', 'PMR')
+      GROUP BY product_id
+    ''', [sessionId]);
 
     int dayCount = 0;
     double dayTotalAmount = 0;
     Map<String, int> dayBreakdownQty = {};
     Map<String, double> dayBreakdownTotal = {};
 
-    for (final sale in allSales) {
-      if (sale['product_id'] == 'PMR') continue;
-      final amount = (sale['amount'] as num?)?.toDouble() ?? 0;
-      final productId = sale['product_id']?.toString() ?? 'Desc.';
-      dayCount++;
-      dayTotalAmount += amount;
-      dayBreakdownQty[productId] = (dayBreakdownQty[productId] ?? 0) + 1;
-      dayBreakdownTotal[productId] = (dayBreakdownTotal[productId] ?? 0) + amount;
+    for (final row in allSalesAgg) {
+      final productId = row['product_id']?.toString() ?? 'Desc.';
+      final qty = (row['qty'] as num?)?.toInt() ?? 0;
+      final total = (row['total_amount'] as num?)?.toDouble() ?? 0.0;
+      
+      dayCount += qty;
+      dayTotalAmount += total;
+      dayBreakdownQty[productId] = qty;
+      dayBreakdownTotal[productId] = total;
     }
 
     List<String> dayBreakdownLines = [];
@@ -179,13 +181,15 @@ class ClosingHelper {
 
       final currentCashierId = ref.read(authProvider).user?.id ?? 1;
       final sessionId = sessionQuery.first['id'] as int;
-      final unclosedSales = await db.query(
-        'transactions',
-        where: 'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id != ? AND product_id != ?',
-        whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA']
-      );
+      final unclosedCountResult = await db.rawQuery('''
+        SELECT COUNT(*) as c 
+        FROM transactions 
+        WHERE session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA')
+      ''', [sessionId, currentCashierId]);
+      
+      final totalUnclosedCount = (unclosedCountResult.first['c'] as int?) ?? 0;
 
-      if (unclosedSales.isEmpty) {
+      if (totalUnclosedCount == 0) {
         if (context.mounted) {
           Navigator.pop(context); // Cerrar loader
           showEmptySalesModal(context);
@@ -193,15 +197,23 @@ class ClosingHelper {
         return;
       }
 
+      final unclosedAgg = await db.rawQuery('''
+        SELECT product_id, COUNT(*) as qty, SUM(amount) as total_amount
+        FROM transactions
+        WHERE session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA', 'PMR')
+        GROUP BY product_id
+      ''', [sessionId, currentCashierId]);
+
       double totalAmount = 0;
       Map<String, int> breakdownQty = {};
 
-      for (final sale in unclosedSales) {
-        if (sale['product_id'] == 'PMR') continue;
-        final amount = (sale['amount'] as num?)?.toDouble() ?? 0;
-        final productId = sale['product_id']?.toString() ?? 'Desc.';
-        totalAmount += amount;
-        breakdownQty[productId] = (breakdownQty[productId] ?? 0) + 1;
+      for (final row in unclosedAgg) {
+        final productId = row['product_id']?.toString() ?? 'Desc.';
+        final qty = (row['qty'] as num?)?.toInt() ?? 0;
+        final total = (row['total_amount'] as num?)?.toDouble() ?? 0.0;
+        
+        totalAmount += total;
+        breakdownQty[productId] = qty;
       }
 
       final productsState = ref.read(productsProvider);
@@ -665,67 +677,84 @@ class ClosingHelper {
 
     final sessionId = sessionRows.first['id'] as int;
     final currentCashierId = ref.read(authProvider).user?.id ?? 1;
-    final unclosedSales = await db.query(
-      'transactions', 
-      where: 'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id != ? AND product_id != ?', 
-      whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA']
-    );
+    try {
+      final unclosedCountResult = await db.rawQuery('''
+        SELECT COUNT(*) as c 
+        FROM transactions 
+        WHERE session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA')
+      ''', [sessionId, currentCashierId]);
+      
+      final totalUnclosedCount = (unclosedCountResult.first['c'] as int?) ?? 0;
 
-    if (unclosedSales.isEmpty && !isArrastre) {
-      if (context.mounted) {
-        showEmptySalesModal(context, onClose: () {
-          // Si venimos de la pantalla de conteo (isLogout = true), la cerramos para volver al Dashboard
-          if (isLogout && context.mounted) {
-            Navigator.pop(context);
-          }
-        });
+      if (totalUnclosedCount == 0 && !isArrastre) {
+        if (context.mounted) {
+          showEmptySalesModal(context, onClose: () {
+            if (isLogout && context.mounted) {
+              Navigator.pop(context);
+            }
+          });
+        }
+        return;
       }
-      return;
-    }
 
-    final cashierName = ref.read(authProvider).user?.name ?? 'Operador';
+      final cashierName = ref.read(authProvider).user?.name ?? 'Operador';
 
-    String startTimeLabel = 'Inicio de turno';
-    if (sessionRows.isNotEmpty) {
-      final openedAtStr = sessionRows.first['opened_at'] as String;
-      final openedDate = DateTime.tryParse(openedAtStr)?.toLocal();
-      if (openedDate != null) {
-        startTimeLabel = '${openedDate.day.toString().padLeft(2, '0')}/${openedDate.month.toString().padLeft(2, '0')}/${openedDate.year} ${openedDate.hour.toString().padLeft(2, '0')}:${openedDate.minute.toString().padLeft(2, '0')}:${openedDate.second.toString().padLeft(2, '0')}';
+      String startTimeLabel = 'Inicio de turno';
+      if (sessionRows.isNotEmpty) {
+        final openedAtStr = sessionRows.first['opened_at'] as String;
+        final openedDate = DateTime.tryParse(openedAtStr)?.toLocal();
+        if (openedDate != null) {
+          startTimeLabel = '${openedDate.day.toString().padLeft(2, '0')}/${openedDate.month.toString().padLeft(2, '0')}/${openedDate.year} ${openedDate.hour.toString().padLeft(2, '0')}:${openedDate.minute.toString().padLeft(2, '0')}:${openedDate.second.toString().padLeft(2, '0')}';
+        }
       }
-    }
 
-    final user = ref.read(authProvider).user;
-    final posName = await storage.getPosLocationName();
-    final branchName = posName ?? user?.branchName ?? 'Sucursal Juana';
+      final user = ref.read(authProvider).user;
+      final posName = await storage.getPosLocationName();
+      final branchName = posName ?? user?.branchName ?? 'Sucursal Juana';
 
-    double totalAmount = 0;
-    Map<String, int> breakdownQty = {};
-    Map<String, double> breakdownTotal = {};
+      final unclosedAgg = await db.rawQuery('''
+        SELECT product_id, COUNT(*) as qty, SUM(amount) as total_amount
+        FROM transactions
+        WHERE session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA', 'PMR')
+        GROUP BY product_id
+      ''', [sessionId, currentCashierId]);
 
-    int pmrCount = 0;
-    int reprintsCount = 0;
-    List<String> pmrHours = [];
+      final pmrSales = await db.rawQuery('''
+        SELECT created_at 
+        FROM transactions 
+        WHERE session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id = 'PMR'
+      ''', [sessionId, currentCashierId]);
+      
+      final reprintsResult = await db.rawQuery('''
+        SELECT COUNT(*) as c 
+        FROM transactions 
+        WHERE session_id = ? AND cashier_id = ? AND is_closed = 0 AND print_status = 2
+      ''', [sessionId, currentCashierId]);
 
-    for (final sale in unclosedSales) {
-      if (sale['product_id'] == 'CIERRE DE CAJA') continue;
-      if (sale['print_status'] == 2) {
-        reprintsCount++;
-      }
-      if (sale['product_id'] == 'PMR') {
-        pmrCount++;
+      double totalAmount = 0;
+      Map<String, int> breakdownQty = {};
+      Map<String, double> breakdownTotal = {};
+
+      int pmrCount = pmrSales.length;
+      int reprintsCount = (reprintsResult.first['c'] as int?) ?? 0;
+      List<String> pmrHours = [];
+
+      for (var sale in pmrSales) {
         final dt = DateTime.tryParse(sale['created_at'].toString())?.toLocal();
         if (dt != null) {
-          pmrHours.add(
-              '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}');
+          pmrHours.add('${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}');
         }
-        continue;
       }
-      final amount = (sale['amount'] as num?)?.toDouble() ?? 0;
-      final productId = sale['product_id']?.toString() ?? 'Desc.';
-      totalAmount += amount;
-      breakdownQty[productId] = (breakdownQty[productId] ?? 0) + 1;
-      breakdownTotal[productId] = (breakdownTotal[productId] ?? 0) + amount;
-    }
+
+      for (final row in unclosedAgg) {
+        final productId = row['product_id']?.toString() ?? 'Desc.';
+        final qty = (row['qty'] as num?)?.toInt() ?? 0;
+        final total = (row['total_amount'] as num?)?.toDouble() ?? 0.0;
+        
+        totalAmount += total;
+        breakdownQty[productId] = qty;
+        breakdownTotal[productId] = total;
+      }
 
     final productsState = ref.read(productsProvider);
     List<String> breakdownLines = [];
@@ -757,7 +786,7 @@ class ClosingHelper {
       "cc": cashierCode,
       "b": branchId,
       "a": totalAmount,
-      "q": unclosedSales.length - pmrCount,
+      "q": totalUnclosedCount - pmrCount,
       "pmr_q": pmrCount,
       "d": dateStr,
       "t": timeStr,
@@ -809,7 +838,7 @@ class ClosingHelper {
       cashierId: cashierCode,
       branchName: branchName,
       posLocationId: posLocationId,
-      totalTransactions: unclosedSales.length - pmrCount,
+      totalTransactions: totalUnclosedCount - pmrCount,
       totalAmount: totalAmount,
       startTime: startTimeLabel,
       endTime: closingLabel,
@@ -832,16 +861,16 @@ class ClosingHelper {
     }
     final printSuccess = printResult ?? false;
 
-    try {
-      final sessionQuery = await db.query('sessions', where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
-      final int? currentSessionId = sessionQuery.isNotEmpty ? sessionQuery.first['id'] as int : null;
+    final sessionQuery = await db.query('sessions', where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
+    final int? currentSessionId = sessionQuery.isNotEmpty ? sessionQuery.first['id'] as int : null;
 
-      final random = math.Random();
-      final plotIdBytes = List<int>.generate(16, (i) => random.nextInt(256));
-      final plotId = md5.convert(plotIdBytes).toString();
-      final macAddress = await DeviceUtils.getMacAddress();
+    final random = math.Random();
+    final plotIdBytes = List<int>.generate(16, (i) => random.nextInt(256));
+    final plotId = md5.convert(plotIdBytes).toString();
+    final macAddress = await DeviceUtils.getMacAddress();
 
-      await db.insert('transactions', {
+    await db.transaction((txn) async {
+      await txn.insert('transactions', {
         'id': 'closure-${now.millisecondsSinceEpoch}',
         'session_id': currentSessionId,
         'cashier_id': currentCashierId,
@@ -853,33 +882,25 @@ class ClosingHelper {
         'created_at': now.toIso8601String(),
         'qr_data': qrData,
         'print_status': printSuccess ? 1 : 0,
-        'is_closed': 1, // EL CIERRE DE CAJA YA NACE CERRADO
+        'is_closed': 1,
         'plot_id': plotId,
         'mac_address': macAddress,
       });
 
-      // Marcar las ventas cerradas por este cajero como cerradas
-      await db.update(
+      await txn.update(
         'transactions',
         {'is_closed': 1},
         where: '(session_id = ? OR (? IS NULL AND session_id IS NULL)) AND cashier_id = ? AND is_closed = 0 AND product_id != ?',
         whereArgs: [currentSessionId, currentSessionId, currentCashierId, 'CIERRE DE CAJA'],
       );
-      // Ya no cerramos la sesión global, permitiendo a otros cajeros cerrar sus propias ventas después
-      if (isLogout) {
-        _executeLogout(context, ref);
-      } else {
-        ref.read(salesHistoryProvider.notifier).fetchHistory();
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error al cerrar caja: ${e.toString()}'),
-            backgroundColor: Colors.redAccent));
-      }
+    });
+
+    if (isLogout) {
+      _executeLogout(context, ref);
+    } else {
+      ref.read(salesHistoryProvider.notifier).fetchHistory();
     }
 
-    // Registrar cierre en el TXT local
     await PrintLogHelper.logClosure();
 
     if (!printSuccess) {
@@ -889,7 +910,16 @@ class ClosingHelper {
             backgroundColor: Colors.orange));
       }
     }
+  } catch (e) {
+    if (context.mounted) {
+      // Ensure any lingering loader is popped
+      Navigator.of(context).popUntil((route) => route.isFirst || route.settings.name == '/recaudo' || route.settings.name == '/dashboard');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Error inesperado al cerrar caja: ${e.toString()}'),
+          backgroundColor: Colors.redAccent));
+    }
   }
+}
 
   static void _executeLogout(BuildContext context, WidgetRef ref) async {
     final navContext = navigatorKey.currentContext ?? context;

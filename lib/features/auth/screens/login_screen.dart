@@ -418,10 +418,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     try {
       final db = await DatabaseHelper.instance.database;
+      final currentCashierId = authState.user?.id ?? 1;
+
       final results = await db.query(
         'transactions',
-        where: 'product_id = ?',
-        whereArgs: ['CIERRE DE CAJA'],
+        where: 'product_id = ? AND cashier_id = ?',
+        whereArgs: ['CIERRE DE CAJA', currentCashierId],
         orderBy: 'created_at DESC',
         limit: 1,
       );
