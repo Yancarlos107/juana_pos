@@ -577,9 +577,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           orderBy: 'created_at DESC',
           limit: 1,
         );
-        String? limitDate = createdAt; // Fallback al cierre si no tiene ventas
+        String? limitDate = createdAt?.toString(); // Fallback al cierre si no tiene ventas
         if (lastSaleQuery.isNotEmpty) {
-          limitDate = lastSaleQuery.first['created_at']?.toString() ?? createdAt;
+          limitDate = lastSaleQuery.first['created_at']?.toString() ?? createdAt?.toString();
         }
 
         final allSales = await db.query(
@@ -641,14 +641,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           shouldPrintBreakdown = true;
         }
 
+        final posName = await ref.read(localStorageProvider).getPosLocationName();
+        final branchName = posName ?? authState.user?.branchName ?? 'Sucursal';
+        
+        final endDate = data["d"]?.toString() ?? 'Fecha no disp.';
+        final endTimeStr = data["t"]?.toString() ?? '';
+
         final printResult = await printer.printClosingTicket(
           cashierName: data['c']?.toString() ?? 'Operador',
           cashierId: currentUserCode,
-          branchName: 'Sucursal',
+          branchName: branchName,
           totalTransactions: data['q'] ?? 0,
           totalAmount: (data['a'] as num?)?.toDouble() ?? 0,
           startTime: 'Turno',
-          endTime: '${data["d"]} ${data["t"] ?? ""}',
+          endTime: '$endDate $endTimeStr'.trim(),
           qrData: qrData,
           breakdown: shouldPrintBreakdown ? breakdownLines : null,
           pmrCount: data['pmr_q'] ?? 0,
@@ -684,6 +690,68 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           duration: const Duration(seconds: 4),
         ),
       );
+    }
+  }
+
+  Future<void> _showPendingClosureDialog(int cashierId, int sessionId, List<Map<String, dynamic>> unclosedSales) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 32),
+            SizedBox(width: 10),
+            Text('Ventas Pendientes', style: TextStyle(fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Text(
+          'Hay ventas pendientes por cerrar en tu turno.\n¿Deseas confirmar el cierre de caja ahora mismo?',
+          style: TextStyle(fontSize: 18),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('CANCELAR', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF6642F8),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('SÍ, CERRAR CAJA', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      double totalSistema = 0;
+      for (final sale in unclosedSales) {
+        if (sale['product_id'] == 'PMR') continue;
+        final amount = (sale['amount'] as num?)?.toDouble() ?? 0;
+        totalSistema += amount;
+      }
+      
+      ClosingHelper.performClosing(
+        context, 
+        ref, 
+        false, // isLogout
+        isArrastre: true,
+        cash: 0,
+        balance: -totalSistema,
+      ).then((_) {
+        _pinController.clear();
+        _pinFocusNode.requestFocus();
+      });
+    } else {
+      _pinController.clear();
+      _pinFocusNode.requestFocus();
     }
   }
 

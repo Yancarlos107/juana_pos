@@ -590,7 +590,7 @@ class ClosingHelper {
                 if (!proceed) return;
               }
 
-              _performClosing(context, ref, isLogout, isArrastre: isArrastre);
+              performClosing(context, ref, isLogout, isArrastre: isArrastre);
             },
             icon: const Icon(Icons.print_rounded, size: 20),
             label: Text(isLogout ? 'CERRAR E IMPRIMIR' : 'CONFIRMAR', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
@@ -680,10 +680,10 @@ class ClosingHelper {
       if (!proceed) return;
     }
 
-    _performClosing(context, ref, isLogout, cashList: cashList, cash: totalCash, balance: balance, isArrastre: isArrastre);
+    performClosing(context, ref, isLogout, cashList: cashList, cash: totalCash, balance: balance, isArrastre: isArrastre);
   }
 
-  static Future<void> _performClosing(BuildContext context, WidgetRef ref, bool isLogout, {dynamic cashList, double? cash, double? balance, bool isArrastre = false}) async {
+  static Future<void> performClosing(BuildContext context, WidgetRef ref, bool isLogout, {dynamic cashList, double? cash, double? balance, bool isArrastre = false}) async {
     final db = await DatabaseHelper.instance.database;
     final storage = ref.read(localStorageProvider);
     final branchId = await storage.getBranchId() ?? 0;

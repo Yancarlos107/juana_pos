@@ -186,8 +186,6 @@ class LocalStorageRepository {
     await prefs.remove(_balanceKey);
     await prefs.remove(_activeCashierIdKey);
     await prefs.remove(_activeCashierNameKey);
-    await prefs.remove('active_pos_location_id');
-    await prefs.remove('active_pos_location_name');
     await prefs.remove('active_lat');
     await prefs.remove('active_lon');
   }
