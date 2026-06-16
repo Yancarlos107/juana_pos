@@ -74,6 +74,13 @@ class SystemStatusNotifier extends StateNotifier<SystemStatus> {
         receiveTimeout: const Duration(seconds: 3),
       ));
       
+      // Detección de Captive Portal: SIM card interceptó y devolvió HTML con 200 OK
+      final contentType = response.headers.value('content-type') ?? '';
+      if (contentType.contains('text/html') || 
+         (response.data is String && (response.data as String).toLowerCase().contains('<html'))) {
+        return false;
+      }
+      
       final isOnline = (response.statusCode ?? 0) < 500;
       if (isOnline) {
         _syncService.syncPendingData();
@@ -81,9 +88,16 @@ class SystemStatusNotifier extends StateNotifier<SystemStatus> {
       return isOnline;
     } catch (e) {
       if (e is DioException && e.response != null) {
-        if (e.response?.statusCode == 302) {
-          return false; // Redirección de la SIM (Captive Portal)
+        // Redirección de la SIM o HTML inyectado como error
+        final contentType = e.response?.headers.value('content-type') ?? '';
+        final isHtml = contentType.contains('text/html') || 
+                       (e.response?.data is String && (e.response?.data as String).toLowerCase().contains('<html'));
+                       
+        if (e.response?.statusCode == 302 || isHtml) {
+          return false; // Es la SIM bloqueando, no hay internet real
         }
+        
+        // Si es 401, 404, 422, etc, el servidor Laravel respondió, por lo que SÍ hay internet
         _syncService.syncPendingData();
         return true;
       }
