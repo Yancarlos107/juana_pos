@@ -32,33 +32,26 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
+  final _pinController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
-  final _userFocusNode = FocusNode();
-  final _passwordFocusNode = FocusNode();
+  final _pinFocusNode = FocusNode();
 
   TextEditingController? _activeController;
-  bool _obscurePassword = true;
+  bool _obscurePin = true;
   bool _hasUnclosedSales = false;
   String _macAddress = '';
 
   @override
   void initState() {
     super.initState();
-    _activeController = _emailController;
+    _activeController = _pinController;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkUnclosedSales();
       _loadMacAddress();
     });
-    _userFocusNode.addListener(() {
-      if (_userFocusNode.hasFocus) {
-        setState(() => _activeController = _emailController);
-      }
-    });
-    _passwordFocusNode.addListener(() {
-      if (_passwordFocusNode.hasFocus) {
-        setState(() => _activeController = _passwordController);
+    _pinFocusNode.addListener(() {
+      if (_pinFocusNode.hasFocus) {
+        setState(() => _activeController = _pinController);
       }
     });
 
@@ -81,10 +74,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   void dispose() {
-    _userFocusNode.dispose();
-    _passwordFocusNode.dispose();
-    _emailController.dispose();
-    _passwordController.dispose();
+    _pinFocusNode.dispose();
+    _pinController.dispose();
     super.dispose();
   }
 
@@ -223,8 +214,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           final decrypted = CryptoUtils.decryptLoginQR(scannedCode, 'juana-777');
           final parts = decrypted.split('#');
           if (parts.length >= 2) {
-            _emailController.text = parts[0];
-            _passwordController.text = parts[1];
+            _pinController.text = parts[1]; // Use password part as PIN
             await _login();
           } else {
             _showErrorSnackBar('Formato QR inválido (sin clave).');
@@ -251,10 +241,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     // Limpiar cualquier estado residual de fiscalizador ANTES de iniciar sesión con un usuario normal
     ref.read(reviewerNameProvider.notifier).state = null;
     
-    await ref.read(authProvider.notifier).login(
-          _emailController.text.trim(),
-          _passwordController.text.trim(),
-        );
+    final pin = _pinController.text.trim();
+    final db = await DatabaseHelper.instance.database;
+    final pinHash = sha1.convert(utf8.encode(pin)).toString();
+    
+    final results = await db.query('users', where: 'password_hash = ?', whereArgs: [pinHash], limit: 1);
+    
+    if (results.isEmpty) {
+      _showErrorSnackBar('PIN incorrecto o no autorizado');
+      _pinController.clear();
+      _pinFocusNode.requestFocus();
+      return;
+    }
+    
+    final email = results.first['email']?.toString() ?? '01';
+
+    await ref.read(authProvider.notifier).login(email, pin);
 
     final authState = ref.read(authProvider);
     // Si llegamos aquí sin excepción, solicitamos el Punto de Venta
@@ -355,11 +357,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _printLastClosure() async {
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+    if (_pinController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-              'Ingresa tu usuario y contraseña para autorizar la impresión',
+              'Ingresa tu PIN para autorizar la impresión',
               style: TextStyle(fontWeight: FontWeight.bold)),
           backgroundColor: Colors.orange,
         ),
@@ -391,11 +393,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ),
     );
 
-    // 1. Validar Credenciales
-    await ref.read(authProvider.notifier).login(
-          _emailController.text.trim(),
-          _passwordController.text.trim(),
-        );
+    // 1. Validar Credenciales via PIN
+    final pin = _pinController.text.trim();
+    final db = await DatabaseHelper.instance.database;
+    final pinHash = sha1.convert(utf8.encode(pin)).toString();
+    
+    final resultsUser = await db.query('users', where: 'password_hash = ?', whereArgs: [pinHash], limit: 1);
+    
+    if (resultsUser.isEmpty) {
+      if (mounted) Navigator.of(context).pop();
+      _showErrorSnackBar('PIN incorrecto o no autorizado');
+      _pinController.clear();
+      _pinFocusNode.requestFocus();
+      return;
+    }
+    
+    final email = resultsUser.first['email']?.toString() ?? '01';
+
+    await ref.read(authProvider.notifier).login(email, pin);
 
     final authState = ref.read(authProvider);
     if (authState.status != AuthStatus.authenticated) {
@@ -403,7 +418,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Credenciales incorrectas o sin red',
+            content: Text('Error de red o cuenta inactiva',
                 style: TextStyle(fontWeight: FontWeight.bold)),
             backgroundColor: Colors.red,
           ),
@@ -932,67 +947,42 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 color: Colors.grey, fontSize: 18), // Aumentado de 15 a 18
           ),
           const SizedBox(height: 36),
+          const SizedBox(height: 36),
           TextFormField(
-            controller: _emailController,
-            focusNode: _userFocusNode,
+            controller: _pinController,
+            focusNode: _pinFocusNode,
             readOnly: true,
             showCursor: true,
-            onTap: () => setState(() => _activeController = _emailController),
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            decoration: InputDecoration(
-              labelText: 'Usuario / Identificación',
-              prefixIcon: const Icon(Icons.person_outline),
-              filled: _activeController == _emailController,
-              fillColor: const Color(0xFF6642F8).withOpacity(0.05),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    const BorderSide(color: Color(0xFF6642F8), width: 2),
-              ),
-            ),
-            validator: (v) {
-              if (v == null || v.isEmpty) return 'Requerido';
-              if (v.length < 4) return 'Mínimo 4 caracteres';
-              return null;
-            },
-          ),
-          const SizedBox(height: 20),
-          TextFormField(
-            controller: _passwordController,
-            focusNode: _passwordFocusNode,
-            readOnly: true,
-            showCursor: true,
-            obscureText: _obscurePassword,
-            onTap: () =>
-                setState(() => _activeController = _passwordController),
+            obscureText: _obscurePin,
+            maxLength: 4,
+            onTap: () => setState(() => _activeController = _pinController),
             style: const TextStyle(
-                fontSize: 24, letterSpacing: 8, fontWeight: FontWeight.bold),
+                fontSize: 48, letterSpacing: 24, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
             decoration: InputDecoration(
-              labelText: 'Contraseña',
-              prefixIcon: const Icon(Icons.lock_outline),
-              filled: _activeController == _passwordController,
+              counterText: "", // Ocultar el contador de maxLength
+              labelText: 'PIN de Acceso',
+              prefixIcon: const Icon(Icons.lock_outline, size: 32),
+              filled: true,
               fillColor: const Color(0xFF6642F8).withOpacity(0.05),
               suffixIcon: IconButton(
                 icon: Icon(
-                    _obscurePassword ? Icons.visibility_off : Icons.visibility),
+                    _obscurePin ? Icons.visibility_off : Icons.visibility, size: 28),
                 onPressed: () =>
-                    setState(() => _obscurePassword = !_obscurePassword),
+                    setState(() => _obscurePin = !_obscurePin),
               ),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(16),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(16),
                 borderSide:
-                    const BorderSide(color: Color(0xFF6642F8), width: 2),
+                    const BorderSide(color: Color(0xFF6642F8), width: 3),
               ),
             ),
             validator: (v) {
               if (v == null || v.isEmpty) return 'Requerido';
-              if (v.length < 4) return 'Mínimo 4 caracteres';
+              if (v.length != 4) return 'Debe tener 4 dígitos';
               return null;
             },
           ),
