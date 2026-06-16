@@ -110,13 +110,22 @@ class ClosingHelper {
     dynamic cashList,
     double? cash,
     double? balance,
+    String? limitDate,
   }) async {
-    final allSalesAgg = await db.rawQuery('''
+    String query = '''
       SELECT product_id, COUNT(*) as qty, SUM(amount) as total_amount
       FROM transactions
       WHERE session_id = ? AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', 'PMR')
-      GROUP BY product_id
-    ''', [sessionId]);
+    ''';
+    List<dynamic> args = [sessionId];
+    
+    if (limitDate != null) {
+      query += ' AND created_at <= ?';
+      args.add(limitDate);
+    }
+    query += ' GROUP BY product_id';
+    
+    final allSalesAgg = await db.rawQuery(query, args);
 
     int dayCount = 0;
     double dayTotalAmount = 0;
@@ -316,7 +325,18 @@ class ClosingHelper {
 
       Map<String, dynamic>? daySummary;
       if (isArrastre) {
-        daySummary = await _buildDaySummary(db, sessionId, productsState);
+        final lastSaleQuery = await db.query(
+          'transactions',
+          where: 'session_id = ? AND cashier_id = ? AND product_id NOT IN (?, ?, ?, ?)',
+          whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', 'PMR'],
+          orderBy: 'created_at DESC',
+          limit: 1,
+        );
+        String? lastSaleDate;
+        if (lastSaleQuery.isNotEmpty) {
+          lastSaleDate = lastSaleQuery.first['created_at']?.toString();
+        }
+        daySummary = await _buildDaySummary(db, sessionId, productsState, limitDate: lastSaleDate);
       }
 
       if (context.mounted) Navigator.pop(context); // Cerrar loader antes de imprimir
@@ -815,8 +835,23 @@ class ClosingHelper {
 
     Map<String, dynamic>? daySummary;
     if (isArrastre) {
+      // Buscar la fecha de la última transacción real del usuario para el arrastre
+      final currentCashierId = ref.read(authProvider).user?.id ?? 1;
+      final lastSaleQuery = await db.query(
+        'transactions',
+        where: 'session_id = ? AND cashier_id = ? AND product_id NOT IN (?, ?, ?, ?)',
+        whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', 'PMR'],
+        orderBy: 'created_at DESC',
+        limit: 1,
+      );
+      
+      String? lastSaleDate;
+      if (lastSaleQuery.isNotEmpty) {
+        lastSaleDate = lastSaleQuery.first['created_at']?.toString();
+      }
+    
       daySummary = await _buildDaySummary(db, sessionId, productsState,
-          cashList: cashList, cash: cash, balance: balance);
+          cashList: cashList, cash: cash, balance: balance, limitDate: lastSaleDate);
     }
 
     if (context.mounted) Navigator.pop(context); // Quitar loader ANTES de imprimir para evitar deadlock de UI

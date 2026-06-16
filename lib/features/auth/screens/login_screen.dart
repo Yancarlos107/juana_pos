@@ -7,6 +7,7 @@ import '../../printer/services/printer_service.dart';
 import '../../../core/storage/local_storage_repository.dart';
 import '../widgets/location_selection_dialog.dart';
 import '../../sales/services/closure_service.dart';
+import '../../sales/helpers/closing_helper.dart';
 import '../../../core/database/database_helper.dart';
 import '../../monitoring/services/system_status_service.dart';
 import '../../../core/network/dio_client.dart';
@@ -465,13 +466,37 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       return;
     }
 
-    // 2. Proceder con la impresión
+    // 2. Revisar si hay ventas pendientes por cerrar
     bool success = false;
     String errorMessage = 'No hay cierres guardados';
 
     try {
       final db = await DatabaseHelper.instance.database;
       final currentCashierId = authState.user?.id ?? 1;
+      
+      final storage = ref.read(localStorageProvider);
+      final branchId = await storage.getBranchId() ?? 0;
+      final sessionQuery = await db.query('sessions', where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
+      
+      if (sessionQuery.isNotEmpty) {
+        final sessionId = sessionQuery.first['id'] as int;
+        
+        final unclosedSales = await db.query(
+          'transactions', 
+          where: 'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id NOT IN (?, ?)', 
+          whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA']
+        );
+        
+        if (unclosedSales.isNotEmpty) {
+          if (mounted) Navigator.of(context).pop(); // Cierra el loader de "buscando"
+          await _showPendingClosureDialog(currentCashierId, sessionId, unclosedSales);
+          return; // Detiene la reimpresión y delega al flujo de nuevo cierre
+        }
+      }
+
+      // 3. Proceder con la reimpresión normal si NO hay ventas pendientes
+      bool success = false;
+      String errorMessage = 'No hay cierres guardados';
 
       final results = await db.query(
         'transactions',
@@ -545,10 +570,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         });
 
         // 2. Reconstruir Resumen del Día (Arrastre)
+        final lastSaleQuery = await db.query(
+          'transactions',
+          where: 'session_id = ? AND cashier_id = ? AND product_id NOT IN (?, ?, ?, ?)',
+          whereArgs: [sessionId, cashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', 'PMR'],
+          orderBy: 'created_at DESC',
+          limit: 1,
+        );
+        String? limitDate = createdAt; // Fallback al cierre si no tiene ventas
+        if (lastSaleQuery.isNotEmpty) {
+          limitDate = lastSaleQuery.first['created_at']?.toString() ?? createdAt;
+        }
+
         final allSales = await db.query(
           'transactions', 
           where: 'session_id = ? AND product_id != ? AND product_id != ? AND product_id != ? AND created_at <= ?', 
-          whereArgs: [sessionId, 'CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', createdAt]
+          whereArgs: [sessionId, 'CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', limitDate]
         );
 
         int dayCount = 0;
