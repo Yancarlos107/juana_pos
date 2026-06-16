@@ -108,6 +108,17 @@ class LocalStorageRepository {
     return prefs.getString('active_pos_location_name');
   }
 
+  // ================= Manejo de First Login =================
+  Future<bool> getIsFirstLogin() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('is_first_login') ?? true;
+  }
+
+  Future<void> setFirstLoginCompleted() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('is_first_login', false);
+  }
+
   Future<void> saveGpsLocation(double lat, double lon) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('active_lat', lat);

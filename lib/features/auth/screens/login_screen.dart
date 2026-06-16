@@ -32,22 +32,31 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
+  final _emailController = TextEditingController();
   final _pinController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  final _userFocusNode = FocusNode();
   final _pinFocusNode = FocusNode();
 
   TextEditingController? _activeController;
   bool _obscurePin = true;
   bool _hasUnclosedSales = false;
   String _macAddress = '';
+  bool _isFirstLogin = false;
 
   @override
   void initState() {
     super.initState();
     _activeController = _pinController;
+    _checkFirstLogin();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkUnclosedSales();
       _loadMacAddress();
+    });
+    _userFocusNode.addListener(() {
+      if (_userFocusNode.hasFocus) {
+        setState(() => _activeController = _emailController);
+      }
     });
     _pinFocusNode.addListener(() {
       if (_pinFocusNode.hasFocus) {
@@ -63,6 +72,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
   }
 
+  Future<void> _checkFirstLogin() async {
+    final storage = ref.read(localStorageProvider);
+    final isFirst = await storage.getIsFirstLogin();
+    if (mounted) {
+      setState(() {
+        _isFirstLogin = isFirst;
+        if (isFirst) {
+          _activeController = _emailController;
+        }
+      });
+    }
+  }
+
   Future<void> _loadMacAddress() async {
     final mac = await DeviceUtils.getMacAddress();
     if (mounted) {
@@ -74,7 +96,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   void dispose() {
+    _userFocusNode.dispose();
     _pinFocusNode.dispose();
+    _emailController.dispose();
     _pinController.dispose();
     super.dispose();
   }
@@ -241,22 +265,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     // Limpiar cualquier estado residual de fiscalizador ANTES de iniciar sesión con un usuario normal
     ref.read(reviewerNameProvider.notifier).state = null;
     
-    final pin = _pinController.text.trim();
-    final db = await DatabaseHelper.instance.database;
-    final pinHash = sha1.convert(utf8.encode(pin)).toString();
-    
-    final results = await db.query('users', where: 'password_hash = ?', whereArgs: [pinHash], limit: 1);
-    
-    if (results.isEmpty) {
-      _showErrorSnackBar('PIN incorrecto o no autorizado');
-      _pinController.clear();
-      _pinFocusNode.requestFocus();
-      return;
-    }
-    
-    final email = results.first['email']?.toString() ?? '01';
+    if (_isFirstLogin) {
+      await ref.read(authProvider.notifier).login(
+            _emailController.text.trim(),
+            _pinController.text.trim(),
+          );
+    } else {
+      final pin = _pinController.text.trim();
+      final db = await DatabaseHelper.instance.database;
+      final pinHash = sha1.convert(utf8.encode(pin)).toString();
+      
+      final results = await db.query('users', where: 'password_hash = ?', whereArgs: [pinHash], limit: 1);
+      
+      if (results.isEmpty) {
+        _showErrorSnackBar('PIN incorrecto o no autorizado');
+        _pinController.clear();
+        _pinFocusNode.requestFocus();
+        return;
+      }
+      
+      final email = results.first['email']?.toString() ?? '01';
 
-    await ref.read(authProvider.notifier).login(email, pin);
+      await ref.read(authProvider.notifier).login(email, pin);
+    }
 
     final authState = ref.read(authProvider);
     // Si llegamos aquí sin excepción, solicitamos el Punto de Venta
@@ -295,6 +326,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
       if (mounted) {
         if (success == true) {
+          if (_isFirstLogin) {
+            await ref.read(localStorageProvider).setFirstLoginCompleted();
+            setState(() => _isFirstLogin = false);
+            _emailController.clear();
+            _pinController.clear();
+          }
+
           // 4. Guardamos la transacción offline de Apertura de Caja para que se sincronice en la RC171
           try {
             final db = await DatabaseHelper.instance.database;
@@ -947,45 +985,108 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 color: Colors.grey, fontSize: 18), // Aumentado de 15 a 18
           ),
           const SizedBox(height: 36),
-          const SizedBox(height: 36),
-          TextFormField(
-            controller: _pinController,
-            focusNode: _pinFocusNode,
-            readOnly: true,
-            showCursor: true,
-            obscureText: _obscurePin,
-            maxLength: 4,
-            onTap: () => setState(() => _activeController = _pinController),
-            style: const TextStyle(
-                fontSize: 48, letterSpacing: 24, fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center,
-            decoration: InputDecoration(
-              counterText: "", // Ocultar el contador de maxLength
-              labelText: 'PIN de Acceso',
-              prefixIcon: const Icon(Icons.lock_outline, size: 32),
-              filled: true,
-              fillColor: const Color(0xFF6642F8).withOpacity(0.05),
-              suffixIcon: IconButton(
-                icon: Icon(
-                    _obscurePin ? Icons.visibility_off : Icons.visibility, size: 28),
-                onPressed: () =>
-                    setState(() => _obscurePin = !_obscurePin),
+          if (_isFirstLogin) ...[
+            TextFormField(
+              controller: _emailController,
+              focusNode: _userFocusNode,
+              readOnly: true,
+              showCursor: true,
+              onTap: () => setState(() => _activeController = _emailController),
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              decoration: InputDecoration(
+                labelText: 'Usuario / Identificación',
+                prefixIcon: const Icon(Icons.person_outline),
+                filled: _activeController == _emailController,
+                fillColor: const Color(0xFF6642F8).withOpacity(0.05),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide:
+                      const BorderSide(color: Color(0xFF6642F8), width: 2),
+                ),
               ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide:
-                    const BorderSide(color: Color(0xFF6642F8), width: 3),
-              ),
+              validator: (v) {
+                if (v == null || v.isEmpty) return 'Requerido';
+                if (v.length < 4) return 'Mínimo 4 caracteres';
+                return null;
+              },
             ),
-            validator: (v) {
-              if (v == null || v.isEmpty) return 'Requerido';
-              if (v.length != 4) return 'Debe tener 4 dígitos';
-              return null;
-            },
-          ),
+            const SizedBox(height: 20),
+            TextFormField(
+              controller: _pinController,
+              focusNode: _pinFocusNode,
+              readOnly: true,
+              showCursor: true,
+              obscureText: _obscurePin,
+              onTap: () => setState(() => _activeController = _pinController),
+              style: const TextStyle(
+                  fontSize: 24, letterSpacing: 8, fontWeight: FontWeight.bold),
+              decoration: InputDecoration(
+                labelText: 'Contraseña',
+                prefixIcon: const Icon(Icons.lock_outline),
+                filled: _activeController == _pinController,
+                fillColor: const Color(0xFF6642F8).withOpacity(0.05),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                      _obscurePin ? Icons.visibility_off : Icons.visibility),
+                  onPressed: () => setState(() => _obscurePin = !_obscurePin),
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFF6642F8), width: 2),
+                ),
+              ),
+              validator: (v) {
+                if (v == null || v.isEmpty) return 'Requerido';
+                if (v.length < 4) return 'Mínimo 4 caracteres';
+                return null;
+              },
+            ),
+          ] else ...[
+            TextFormField(
+              controller: _pinController,
+              focusNode: _pinFocusNode,
+              readOnly: true,
+              showCursor: true,
+              obscureText: _obscurePin,
+              maxLength: 4,
+              onTap: () => setState(() => _activeController = _pinController),
+              style: const TextStyle(
+                  fontSize: 48, letterSpacing: 24, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+              decoration: InputDecoration(
+                counterText: "", // Ocultar el contador de maxLength
+                labelText: 'PIN de Acceso',
+                prefixIcon: const Icon(Icons.lock_outline, size: 32),
+                filled: true,
+                fillColor: const Color(0xFF6642F8).withOpacity(0.05),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                      _obscurePin ? Icons.visibility_off : Icons.visibility, size: 28),
+                  onPressed: () =>
+                      setState(() => _obscurePin = !_obscurePin),
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide:
+                      const BorderSide(color: Color(0xFF6642F8), width: 3),
+                ),
+              ),
+              validator: (v) {
+                if (v == null || v.isEmpty) return 'Requerido';
+                if (v.length != 4) return 'Debe tener 4 dígitos';
+                return null;
+              },
+            ),
+          ],
           if (authState.errorMessage != null) ...[
             const SizedBox(height: 24),
             Text(
