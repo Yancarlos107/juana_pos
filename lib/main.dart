@@ -9,7 +9,7 @@ import 'core/storage/local_storage_repository.dart';
 import 'core/services/kiosk_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/providers/auth_providers.dart';
-import 'core/database/database_helper.dart';
+import 'features/auth/services/session_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -61,46 +61,36 @@ class _AuthGateState extends ConsumerState<AuthGate> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkAuth();
-    });
+    _checkAuth();
   }
 
   Future<void> _checkAuth() async {
-    final storage = LocalStorageRepository();
-    final token = await storage.getToken();
+    try {
+      final storage = LocalStorageRepository();
+      final token = await storage.getToken();
 
-    if (token != null && token.isNotEmpty) {
-      await ref.read(authProvider.notifier).restoreOfflineUser();
-      final user = ref.read(authProvider).user;
-      
-      if (user != null) {
-        // Verificar si existe una sesión abierta válida
-        final db = await DatabaseHelper.instance.database;
-        final branchId = await storage.getBranchId() ?? 0;
-        final openSessions = await db.query(
-          'sessions',
-          where: 'status = ? AND branch_id = ?',
-          whereArgs: ['open', branchId],
-        );
+      if (token != null && token.isNotEmpty) {
+        // Restaurar usuario desde SQLite
+        await ref.read(authProvider.notifier).restoreOfflineUser();
+        final user = ref.read(authProvider).user;
 
-        if (openSessions.isEmpty) {
-          // No hay sesión abierta válida (la sesión es nula o se perdió),
-          // forzamos el login para que el sistema abra una nueva sesión formalmente.
+        if (user != null) {
+          // Asegurarnos de que hay una sesión abierta para evitar ventas huérfanas
+          final sessionService = ref.read(sessionServiceProvider);
+          await sessionService.validateAndOpenSession(user.branchId);
+        } else {
+          // El token existe pero el usuario no se pudo restaurar (ej. DB limpia)
           await storage.deleteToken();
-          ref.read(authProvider.notifier).logout(ref);
         }
-      } else {
-        // El usuario es nulo (la restauración falló), forzar logout limpio
-        await storage.deleteToken();
-        ref.read(authProvider.notifier).logout(ref);
       }
-    }
-
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
+    } catch (e) {
+      print('DEBUG: Error en AuthGate: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -108,11 +98,12 @@ class _AuthGateState extends ConsumerState<AuthGate> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
-        backgroundColor: Colors.white,
-        body: Center(child: CircularProgressIndicator(color: Color(0xFF6642F8))),
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF6642F8)),
+        ),
       );
     }
-    
+
     final user = ref.watch(authProvider).user;
     if (user != null) {
       return const DashboardScreen();

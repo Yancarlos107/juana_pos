@@ -45,6 +45,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await ref.read(authProvider.notifier).restoreOfflineUser();
 
       // Cargamos el saldo local inmediatamente para evitar parpadeos
       ref.read(balanceProvider.notifier).loadLocalBalance();
@@ -177,17 +178,21 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
     int successfulPrints = 0;
 
+    final user = ref.read(authProvider).user;
+    if (user == null) {
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/login');
+      }
+      return;
+    }
+
     for (final entry in cartCopy.entries) {
       final product = entry.key;
       final quantity = entry.value;
 
       for (int i = 0; i < quantity; i++) {
-        final user = ref.read(authProvider).user;
-        if (user == null) {
-          if (mounted) Navigator.pushReplacementNamed(context, '/login');
-          return;
-        }
-        await ref.read(qrPurchaseProvider.notifier).purchase(product: product, cashierId: user.id);
+        final currentUserId = user.id;
+        await ref.read(qrPurchaseProvider.notifier).purchase(product: product, cashierId: currentUserId);
 
         final qrState = ref.read(qrPurchaseProvider);
         if (qrState.status == QrPurchaseStatus.success && qrState.result != null) {
@@ -742,15 +747,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       final localId = "OFF-RC171-${DateTime.now().microsecondsSinceEpoch}-$posLocationId";
 
                       final user = ref.read(authProvider).user;
-                      if (user == null || sessionId == null) {
+                      if (user == null) {
                         if (mounted) Navigator.pushReplacementNamed(context, '/login');
                         return;
                       }
+                      final currentCashierId = user.id;
 
                       await db.insert('transactions', {
                         'id': localId,
                         'session_id': sessionId,
-                        'cashier_id': user.id, // ID del taquillero activo
+                        'cashier_id': currentCashierId, // ID del taquillero activo
                         'reviewer_id': reviewerId, // ID del fiscalizador que audita
                         'pos_location_id': posLocationId,
                         'product_id': 'INGRESO_FISCALIZADOR',
@@ -1194,16 +1200,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     }
 
     final db = await DatabaseHelper.instance.database;
-    final branchId = ref.read(authProvider).user?.branchId ?? 0;
+    final user = ref.read(authProvider).user;
+    if (user == null) {
+      if (mounted) Navigator.pushReplacementNamed(context, '/login');
+      return;
+    }
+    final branchId = user.branchId;
     final sessionQuery = await db.query('sessions',
         where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
     final sessionId = sessionQuery.isNotEmpty ? sessionQuery.first['id'] : null;
     final posLocationId = await ref.read(localStorageProvider).getPosLocationId();
-    final user = ref.read(authProvider).user;
-    if (user == null || sessionId == null) {
-      if (mounted) Navigator.pushReplacementNamed(context, '/login');
-      return;
-    }
+    final cashierId = user.id;
 
     final random = math.Random();
     final plotIdBytes = List<int>.generate(16, (i) => random.nextInt(256));
@@ -1212,7 +1219,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     await db.insert('transactions', {
       'id': 'PMR-${DateTime.now().millisecondsSinceEpoch}',
       'session_id': sessionId,
-      'cashier_id': user.id,
+      'cashier_id': cashierId,
       'pos_location_id': posLocationId,
       'product_id': 'PMR',
       'amount': 0,

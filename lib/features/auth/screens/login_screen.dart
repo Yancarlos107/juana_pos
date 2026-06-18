@@ -221,8 +221,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _scanLoginQR() async {
-    if (_isLoadingLogin) return;
-    setState(() => _isLoadingLogin = true);
     try {
       final result = await BarcodeScanner.scan(
         options: const ScanOptions(
@@ -253,8 +251,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
     } catch (e) {
       _showErrorSnackBar('Error de cámara: $e');
-    } finally {
-      if (mounted) setState(() => _isLoadingLogin = false);
     }
   }
 
@@ -268,12 +264,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _login() async {
     if (_isLoadingLogin) return;
     if (!_formKey.currentState!.validate()) return;
-    
-    setState(() => _isLoadingLogin = true);
-    
-    try {
 
-    // Limpiar cualquier estado residual de fiscalizador ANTES de iniciar sesión con un usuario normal
+    setState(() => _isLoadingLogin = true);
+
+    try {
+      // Limpiar cualquier estado residual de fiscalizador ANTES de iniciar sesión con un usuario normal
     ref.read(reviewerNameProvider.notifier).state = null;
 
     if (_isFirstLogin) {
@@ -561,7 +556,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         }
 
         String breakdownWhere =
-            'session_id = ? AND cashier_id = ? AND product_id != ? AND product_id != ? AND product_id != ? AND created_at <= ?';
+            '(session_id = ? OR session_id IS NULL) AND cashier_id = ? AND product_id != ? AND product_id != ? AND product_id != ? AND created_at <= ?';
         List<Object?> breakdownArgs = [
           sessionId,
           cashierId,
@@ -604,7 +599,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         final lastSaleQuery = await db.query(
           'transactions',
           where:
-              'session_id = ? AND cashier_id = ? AND product_id NOT IN (?, ?, ?, ?)',
+              '(session_id = ? OR session_id IS NULL) AND cashier_id = ? AND product_id NOT IN (?, ?, ?, ?)',
           whereArgs: [
             sessionId,
             cashierId,
@@ -623,11 +618,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               createdAt?.toString();
         }
 
+        final todayStr = "${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().day.toString().padLeft(2, '0')}";
         final allSales = await db.query('transactions',
             where:
-                'session_id = ? AND product_id != ? AND product_id != ? AND product_id != ? AND created_at <= ?',
+                'created_at LIKE ? AND product_id != ? AND product_id != ? AND product_id != ? AND created_at <= ?',
             whereArgs: [
-              sessionId,
+              '${todayStr}%',
               'CIERRE DE CAJA',
               'APERTURA DE CAJA',
               'INGRESO_FISCALIZADOR',
@@ -875,6 +871,44 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ref
                     .read(systemStatusProvider.notifier)
                     .forceCheckPendingTransactions();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.link, color: Color(0xFF6642F8)),
+              title: const Text('Vincular Ventas Huérfanas'),
+              subtitle: const Text(
+                  'Asigna las ventas sin sesión a la sesión abierta actual'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final db = await DatabaseHelper.instance.database;
+                
+                final lastSaleQuery = await db.query('transactions',
+                    where: 'session_id IS NOT NULL',
+                    orderBy: 'created_at DESC',
+                    limit: 1);
+                    
+                if (lastSaleQuery.isNotEmpty) {
+                  final sessionId = lastSaleQuery.first['session_id'] as int;
+                  int count = await db.rawUpdate('''
+                    UPDATE transactions 
+                    SET session_id = ? 
+                    WHERE session_id IS NULL AND is_closed = 0
+                  ''', [sessionId]);
+                  
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text('Se vincularon $count ventas a la última sesión ($sessionId)'),
+                      backgroundColor: Colors.green,
+                    ));
+                  }
+                } else {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('No hay historial de sesiones para vincular las ventas'),
+                      backgroundColor: Colors.orange,
+                    ));
+                  }
+                }
               },
             ),
             if (isDeviceOwner && !isInKiosk)
@@ -1300,177 +1334,175 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final authState = ref.watch(authProvider);
     final systemStatus = ref.watch(systemStatusProvider);
 
-    return Stack(
-      children: [
-        Scaffold(
+    final scaffoldContent = Scaffold(
           backgroundColor: Colors.white,
-          appBar: AppBar(
-            backgroundColor: Colors.white,
-            elevation: 0,
-            surfaceTintColor: Colors.white,
-            leadingWidth: 100,
-            leading: Padding(
-              padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 8.0),
-              child: ElevatedButton(
-                onPressed: _isLoadingLogin ? null : _scanLoginQR,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF6642F8).withOpacity(0.1),
-                  foregroundColor: const Color(0xFF6642F8),
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  padding: EdgeInsets.zero,
-                ),
-                child: const Icon(Icons.qr_code_scanner, size: 45),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.white,
+        leadingWidth: 100,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 8.0),
+          child: ElevatedButton(
+            onPressed: _scanLoginQR,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF6642F8).withOpacity(0.1),
+              foregroundColor: const Color(0xFF6642F8),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
+              padding: EdgeInsets.zero,
             ),
-            actions: [
-              IconButton(
-                onPressed: _showPendingSalesModal,
-                tooltip: _hasUnclosedSales
-                    ? 'Ver ventas pendientes de cierre'
-                    : 'No hay ventas pendientes',
-                icon: Icon(
-                  Icons.account_balance_wallet_rounded,
-                  color: _hasUnclosedSales ? Colors.redAccent : Colors.green,
-                  size: 40,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Icon(Icons.accessible_rounded,
-                  color:
-                      systemStatus.isPmrConnected ? Colors.green : Colors.redAccent,
-                  size: 40),
-              const SizedBox(width: 16),
-              Icon(Icons.camera_alt_rounded,
-                  color: systemStatus.isCameraConnected
-                      ? Colors.green
-                      : Colors.redAccent,
-                  size: 40),
-              const SizedBox(width: 16),
-              Icon(Icons.print_rounded,
-                  color: systemStatus.isPrinterConnected
-                      ? Colors.green
-                      : Colors.redAccent,
-                  size: 40),
-              const SizedBox(width: 16),
-              Icon(Icons.wifi_rounded,
-                  color: systemStatus.isInternetConnected
-                      ? Colors.green
-                      : Colors.redAccent,
-                  size: 40),
-              const SizedBox(width: 16),
-              if (systemStatus.pendingTransactions > 0)
-                Center(
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                        color: Colors.orange,
-                        borderRadius: BorderRadius.circular(16)),
-                    child: Text('${systemStatus.pendingTransactions}',
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18)),
-                  ),
-                ),
-              const SizedBox(width: 8),
-            ],
-          ),
-          floatingActionButton: FloatingActionButton(
-            onPressed: _printLastClosure,
-            backgroundColor: const Color(0xFF6642F8),
-            tooltip: 'Imprimir último cierre',
-            child: const Icon(Icons.point_of_sale_rounded, color: Colors.white),
-          ),
-          body: Stack(
-            children: [
-              SafeArea(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    if (constraints.maxWidth > 800) {
-                      return Center(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 48, vertical: 24),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Expanded(
-                                flex: 5,
-                                child: SingleChildScrollView(
-                                  child: Padding(
-                                    padding: const EdgeInsets.only(right: 32),
-                                    child: _buildForm(),
-                                  ),
-                                ),
-                              ),
-                              Container(
-                                  width: 1,
-                                  height: 400,
-                                  color: Colors.grey.shade200),
-                              Expanded(
-                                flex: 6,
-                                child: Center(
-                                  child: SingleChildScrollView(
-                                    child: Padding(
-                                      padding: const EdgeInsets.only(left: 32),
-                                      child: _buildNumPad(authState),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    } else {
-                      return Center(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 24, vertical: 32),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              _buildForm(),
-                              const SizedBox(height: 48),
-                              _buildNumPad(authState),
-                            ],
-                          ),
-                        ),
-                      );
-                    }
-                  },
-                ),
-              ),
-              Positioned(
-                bottom: 16,
-                left: 16,
-                child: Text(
-                  '${ApiConstants.displayVersion} - MAC: ${_macAddress.isEmpty ? 'Cargando...' : _macAddress}',
-                  style: const TextStyle(
-                    color: Colors.black54,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
+            child: const Icon(Icons.qr_code_scanner, size: 45),
           ),
         ),
-        if (_isLoadingLogin)
-          Positioned.fill(
-            child: AbsorbPointer(
+        actions: [
+          IconButton(
+            onPressed: _showPendingSalesModal,
+            tooltip: _hasUnclosedSales
+                ? 'Ver ventas pendientes de cierre'
+                : 'No hay ventas pendientes',
+            icon: Icon(
+              Icons.account_balance_wallet_rounded,
+              color: _hasUnclosedSales ? Colors.redAccent : Colors.green,
+              size: 40,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Icon(Icons.accessible_rounded,
+              color:
+                  systemStatus.isPmrConnected ? Colors.green : Colors.redAccent,
+              size: 40),
+          const SizedBox(width: 16),
+          Icon(Icons.camera_alt_rounded,
+              color: systemStatus.isCameraConnected
+                  ? Colors.green
+                  : Colors.redAccent,
+              size: 40),
+          const SizedBox(width: 16),
+          Icon(Icons.print_rounded,
+              color: systemStatus.isPrinterConnected
+                  ? Colors.green
+                  : Colors.redAccent,
+              size: 40),
+          const SizedBox(width: 16),
+          Icon(Icons.wifi_rounded,
+              color: systemStatus.isInternetConnected
+                  ? Colors.green
+                  : Colors.redAccent,
+              size: 40),
+          const SizedBox(width: 16),
+          if (systemStatus.pendingTransactions > 0)
+            Center(
               child: Container(
-                color: Colors.black45,
-                child: const Center(
-                  child: CircularProgressIndicator(
-                    color: Color(0xFF6642F8),
-                  ),
-                ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                    color: Colors.orange,
+                    borderRadius: BorderRadius.circular(16)),
+                child: Text('${systemStatus.pendingTransactions}',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18)),
               ),
+            ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _printLastClosure,
+        backgroundColor: const Color(0xFF6642F8),
+        tooltip: 'Imprimir último cierre',
+        child: const Icon(Icons.point_of_sale_rounded, color: Colors.white),
+      ),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth > 800) {
+                  // Pantalla grande: Mostrar en dos columnas (Row)
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 48, vertical: 24),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            flex: 5,
+                            child: SingleChildScrollView(
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 32),
+                                child: _buildForm(),
+                              ),
+                            ),
+                          ),
+                          Container(
+                              width: 1,
+                              height: 400,
+                              color: Colors.grey.shade200),
+                          Expanded(
+                            flex: 6,
+                            child: Center(
+                              child: SingleChildScrollView(
+                                child: Padding(
+                                  padding: const EdgeInsets.only(left: 32),
+                                  child: _buildNumPad(authState),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                } else {
+                  // Pantalla pequeña: Mostrar en una sola columna (Column)
+                  return Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 32),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _buildForm(),
+                          const SizedBox(height: 48),
+                          _buildNumPad(authState),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+              },
+            ),
+          ),
+          Positioned(
+            bottom: 16,
+            left: 16,
+            child: Text(
+              '${ApiConstants.displayVersion} - MAC: ${_macAddress.isEmpty ? 'Cargando...' : _macAddress}',
+              style: const TextStyle(
+                color: Colors.black54,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return Stack(
+      children: [
+        scaffoldContent,
+        if (_isLoadingLogin)
+          Container(
+            color: Colors.black54,
+            child: const Center(
+              child: CircularProgressIndicator(color: Color(0xFF6642F8)),
             ),
           ),
       ],

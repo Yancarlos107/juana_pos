@@ -401,20 +401,22 @@ class SalesHistoryNotifier extends StateNotifier<SalesHistoryState> {
 
       final currentCashierId = await _storage.getActiveCashierId();
 
-      // Mostrar ventas de la sesión abierta o ventas huérfanas de hoy (que quedaron con sesión nula)
+      // Filtrar por la sesión abierta para garantizar que
+      // la lista de Recaudo coincida exactamente con lo que se va a cerrar.
       final data = await db.rawQuery(
         '''
         SELECT t.*, p.product_name 
         FROM transactions t
         LEFT JOIN products p ON t.product_id = p.id
-        WHERE (t.session_id = ? OR (? IS NULL AND t.session_id IS NULL) OR (t.session_id IS NULL AND t.created_at LIKE ?))
+        WHERE (t.session_id = ? OR t.session_id IS NULL)
+          AND t.cashier_id = ?
           AND t.product_id != 'PMR' 
           AND t.product_id != 'APERTURA DE CAJA'
           AND t.product_id != 'CIERRE DE CAJA'
           AND t.product_id != 'INGRESO_FISCALIZADOR'
         ORDER BY t.created_at DESC
         ''',
-        [openSessionId, openSessionId, '$todayStr%']
+        [openSessionId, currentCashierId]
       );
       
       // Mapear el flag 'is_closed' desde la base de datos (0 o 1)
