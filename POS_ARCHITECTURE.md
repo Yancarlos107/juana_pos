@@ -154,7 +154,7 @@ La tablet debe ser inviolable para el taquillero: no puede salir de la app, ni r
 - **Canal nativo `co.Juana.kiosk`** (MainActivity.kt): `isDeviceOwner`, `isInKioskMode`, `startKiosk`, `stopKiosk`, `clearDeviceOwner`.
 - **`KioskService`** (Dart, `core/services/`): wrapper del canal. **Degrada de forma segura**: si la tablet no está aprovisionada, todos los métodos son no-op y retornan `false` (el desarrollo en emulador no se ve afectado).
 - **`main.dart`**: llama `KioskService.start()` tras el primer frame. La app entra sola al kiosco en cada arranque.
-- **Menú admin** (`KioskLogoButton`: 3 taps en el logo + PIN `9999`, en LoginScreen): *Ajustes del Sistema* (sale del kiosco primero — el lock task bloquea abrir Settings), *Exportar Tramas*, *Activar Modo Kiosco* y *Liberar Dispositivo*.
+- **Menú admin** (`KioskLogoButton`: 3 taps en el logo + PIN `1510`, en LoginScreen): *Ajustes del Sistema* (sale del kiosco primero — el lock task bloquea abrir Settings), *Exportar Tramas*, *Activar Modo Kiosco* y *Liberar Dispositivo*.
 
 ### Aprovisionamiento (una vez por tablet)
 
@@ -184,6 +184,6 @@ El lock task **suprime los diálogos del sistema**, incluido el de permiso USB (
 ### Reglas para no romper el kiosco
 
 1. **No desactivar la Depuración USB/inalámbrica** en las tablets: es la puerta de mantenimiento.
-2. El PIN admin está hardcodeado en `KioskLogoButton` (`'9999'`): es la única llave en campo. *Mejora pendiente: moverlo a configuración remota (cashier-initialize).*
+2. El PIN admin está hardcodeado en `KioskLogoButton` (`'1510'`): es la única llave en campo. *Mejora pendiente: moverlo a configuración remota (cashier-initialize).*
 3. Si agregas un flujo que necesite abrir una app o diálogo externo (cámara, archivos, otra activity), recuerda que **el lock task lo bloqueará**: debe pasar por `KioskService.stop()` primero o agregarse el paquete a `setLockTaskPackages`.
 4. *Mejora pendiente: timeout defensivo en `printViaUsbDirect` para que una impresión sin permiso USB responda error en vez de quedar colgada.*

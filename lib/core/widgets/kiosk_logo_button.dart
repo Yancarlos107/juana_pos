@@ -12,7 +12,7 @@ class KioskLogoButton extends StatefulWidget {
   const KioskLogoButton({
     super.key,
     required this.child,
-    this.pin = '9999',
+    this.pin = '1510',
     this.requiredTaps = 3,
     this.onSuccess,
   });
@@ -59,12 +59,15 @@ class _KioskLogoButtonState extends State<KioskLogoButton> {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
             return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              title: const Text('Acceso Administrador', style: TextStyle(fontWeight: FontWeight.bold)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              title: const Text('Acceso Administrador',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Ingrese el PIN para salir del modo kiosco y acceder a los ajustes del sistema.'),
+                  const Text(
+                      'Ingrese el PIN para salir del modo kiosco y acceder a los ajustes del sistema.'),
                   const SizedBox(height: 16),
                   TextField(
                     controller: pinController,
@@ -73,7 +76,8 @@ class _KioskLogoButtonState extends State<KioskLogoButton> {
                     autofocus: true,
                     decoration: InputDecoration(
                       labelText: 'PIN de seguridad',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
                       errorText: isError ? 'PIN incorrecto' : null,
                     ),
                   ),
@@ -82,7 +86,8 @@ class _KioskLogoButtonState extends State<KioskLogoButton> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text('CANCELAR', style: TextStyle(color: Colors.grey)),
+                  child: const Text('CANCELAR',
+                      style: TextStyle(color: Colors.grey)),
                 ),
                 ElevatedButton(
                   onPressed: () async {
@@ -102,7 +107,9 @@ class _KioskLogoButtonState extends State<KioskLogoButton> {
                       });
                     }
                   },
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6642F8), foregroundColor: Colors.white),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF6642F8),
+                      foregroundColor: Colors.white),
                   child: const Text('INGRESAR'),
                 ),
               ],

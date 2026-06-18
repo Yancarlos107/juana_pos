@@ -45,7 +45,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await ref.read(authProvider.notifier).restoreOfflineUser();
 
       // Cargamos el saldo local inmediatamente para evitar parpadeos
       ref.read(balanceProvider.notifier).loadLocalBalance();
@@ -183,8 +182,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       final quantity = entry.value;
 
       for (int i = 0; i < quantity; i++) {
-        final currentUserId = ref.read(authProvider).user?.id ?? 1;
-        await ref.read(qrPurchaseProvider.notifier).purchase(product: product, cashierId: currentUserId);
+        final user = ref.read(authProvider).user;
+        if (user == null) {
+          if (mounted) Navigator.pushReplacementNamed(context, '/login');
+          return;
+        }
+        await ref.read(qrPurchaseProvider.notifier).purchase(product: product, cashierId: user.id);
 
         final qrState = ref.read(qrPurchaseProvider);
         if (qrState.status == QrPurchaseStatus.success && qrState.result != null) {
@@ -738,12 +741,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       
                       final localId = "OFF-RC171-${DateTime.now().microsecondsSinceEpoch}-$posLocationId";
 
-                      final currentCashierId = ref.read(authProvider).user?.id ?? 1;
+                      final user = ref.read(authProvider).user;
+                      if (user == null || sessionId == null) {
+                        if (mounted) Navigator.pushReplacementNamed(context, '/login');
+                        return;
+                      }
 
                       await db.insert('transactions', {
                         'id': localId,
                         'session_id': sessionId,
-                        'cashier_id': currentCashierId, // ID del taquillero activo
+                        'cashier_id': user.id, // ID del taquillero activo
                         'reviewer_id': reviewerId, // ID del fiscalizador que audita
                         'pos_location_id': posLocationId,
                         'product_id': 'INGRESO_FISCALIZADOR',
@@ -1192,7 +1199,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
     final sessionId = sessionQuery.isNotEmpty ? sessionQuery.first['id'] : null;
     final posLocationId = await ref.read(localStorageProvider).getPosLocationId();
-    final cashierId = ref.read(authProvider).user?.id ?? 1;
+    final user = ref.read(authProvider).user;
+    if (user == null || sessionId == null) {
+      if (mounted) Navigator.pushReplacementNamed(context, '/login');
+      return;
+    }
 
     final random = math.Random();
     final plotIdBytes = List<int>.generate(16, (i) => random.nextInt(256));
@@ -1201,7 +1212,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     await db.insert('transactions', {
       'id': 'PMR-${DateTime.now().millisecondsSinceEpoch}',
       'session_id': sessionId,
-      'cashier_id': cashierId,
+      'cashier_id': user.id,
       'pos_location_id': posLocationId,
       'product_id': 'PMR',
       'amount': 0,

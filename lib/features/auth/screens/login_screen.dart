@@ -44,6 +44,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _hasUnclosedSales = false;
   String _macAddress = '';
   bool _isFirstLogin = false;
+  bool _isLoadingLogin = false;
 
   @override
   void initState() {
@@ -194,8 +195,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             fontSize: 18,
                             color: Color(0xFF3F3D56))),
                     subtitle: Text('Ventas sin cerrar: $count'),
-                    trailing: Text(
-                        '\$${amount.toStringAsFixed(2)}',
+                    trailing: Text('\$${amount.toStringAsFixed(2)}',
                         style: const TextStyle(
                             color: Color(0xFF6642F8),
                             fontWeight: FontWeight.bold,
@@ -221,6 +221,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _scanLoginQR() async {
+    if (_isLoadingLogin) return;
+    setState(() => _isLoadingLogin = true);
     try {
       final result = await BarcodeScanner.scan(
         options: const ScanOptions(
@@ -236,7 +238,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (result.type == ResultType.Barcode && result.rawContent.isNotEmpty) {
         final scannedCode = result.rawContent;
         try {
-          final decrypted = CryptoUtils.decryptLoginQR(scannedCode, 'juana-777');
+          final decrypted =
+              CryptoUtils.decryptLoginQR(scannedCode, 'juana-777');
           final parts = decrypted.split('#');
           if (parts.length >= 2) {
             _pinController.text = parts[1]; // Use password part as PIN
@@ -250,6 +253,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
     } catch (e) {
       _showErrorSnackBar('Error de cámara: $e');
+    } finally {
+      if (mounted) setState(() => _isLoadingLogin = false);
     }
   }
 
@@ -261,11 +266,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _login() async {
+    if (_isLoadingLogin) return;
     if (!_formKey.currentState!.validate()) return;
     
+    setState(() => _isLoadingLogin = true);
+    
+    try {
+
     // Limpiar cualquier estado residual de fiscalizador ANTES de iniciar sesión con un usuario normal
     ref.read(reviewerNameProvider.notifier).state = null;
-    
+
     if (_isFirstLogin) {
       await ref.read(authProvider.notifier).login(
             _emailController.text.trim(),
@@ -275,16 +285,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final pin = _pinController.text.trim();
       final db = await DatabaseHelper.instance.database;
       final pinHash = sha1.convert(utf8.encode(pin)).toString();
-      
-      final results = await db.query('users', where: 'password_hash = ?', whereArgs: [pinHash], limit: 1);
-      
+
+      final results = await db.query('users',
+          where: 'password_hash = ?', whereArgs: [pinHash], limit: 1);
+
       if (results.isEmpty) {
         _showErrorSnackBar('PIN incorrecto o no autorizado');
         _pinController.clear();
         _pinFocusNode.requestFocus();
         return;
       }
-      
+
       final email = results.first['email']?.toString() ?? '01';
 
       await ref.read(authProvider.notifier).login(email, pin);
@@ -344,7 +355,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             final cashierId = authState.user?.id ?? 1;
 
             final random = math.Random();
-            final plotIdBytes = List<int>.generate(16, (i) => random.nextInt(256));
+            final plotIdBytes =
+                List<int>.generate(16, (i) => random.nextInt(256));
             final plotId = md5.convert(plotIdBytes).toString();
 
             await db.insert('transactions', {
@@ -393,14 +405,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         }
       }
     }
+    } finally {
+      if (mounted) setState(() => _isLoadingLogin = false);
+    }
   }
 
   Future<void> _printLastClosure() async {
     if (_pinController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-              'Ingresa tu PIN para autorizar la impresión',
+          content: Text('Ingresa tu PIN para autorizar la impresión',
               style: TextStyle(fontWeight: FontWeight.bold)),
           backgroundColor: Colors.orange,
         ),
@@ -436,9 +450,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final pin = _pinController.text.trim();
     final db = await DatabaseHelper.instance.database;
     final pinHash = sha1.convert(utf8.encode(pin)).toString();
-    
-    final resultsUser = await db.query('users', where: 'password_hash = ?', whereArgs: [pinHash], limit: 1);
-    
+
+    final resultsUser = await db.query('users',
+        where: 'password_hash = ?', whereArgs: [pinHash], limit: 1);
+
     if (resultsUser.isEmpty) {
       if (mounted) Navigator.of(context).pop();
       _showErrorSnackBar('PIN incorrecto o no autorizado');
@@ -446,7 +461,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _pinFocusNode.requestFocus();
       return;
     }
-    
+
     final email = resultsUser.first['email']?.toString() ?? '01';
 
     await ref.read(authProvider.notifier).login(email, pin);
@@ -473,23 +488,30 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       final db = await DatabaseHelper.instance.database;
       final currentCashierId = authState.user?.id ?? 1;
-      
+
       final storage = ref.read(localStorageProvider);
       final branchId = await storage.getBranchId() ?? 0;
-      final sessionQuery = await db.query('sessions', where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
-      
+      final sessionQuery = await db.query('sessions',
+          where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
+
       if (sessionQuery.isNotEmpty) {
         final sessionId = sessionQuery.first['id'] as int;
-        
-        final unclosedSales = await db.query(
-          'transactions', 
-          where: 'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id NOT IN (?, ?)', 
-          whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA']
-        );
-        
+
+        final unclosedSales = await db.query('transactions',
+            where:
+                'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id NOT IN (?, ?)',
+            whereArgs: [
+              sessionId,
+              currentCashierId,
+              'CIERRE DE CAJA',
+              'APERTURA DE CAJA'
+            ]);
+
         if (unclosedSales.isNotEmpty) {
-          if (mounted) Navigator.of(context).pop(); // Cierra el loader de "buscando"
-          await _showPendingClosureDialog(currentCashierId, sessionId, unclosedSales);
+          if (mounted)
+            Navigator.of(context).pop(); // Cierra el loader de "buscando"
+          await _showPendingClosureDialog(
+              currentCashierId, sessionId, unclosedSales);
           return; // Detiene la reimpresión y delega al flujo de nuevo cierre
         }
       }
@@ -518,37 +540,45 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         // Cargar nombres de productos
         final productsQuery = await db.query('products');
         final Map<String, String> productNames = {
-          for (var p in productsQuery) p['id'].toString(): p['product_name']?.toString() ?? "Tarifa \${p['id']}"
+          for (var p in productsQuery)
+            p['id'].toString():
+                p['product_name']?.toString() ?? "Tarifa \${p['id']}"
         };
 
         // 1. Reconstruir desglose del cajero (Breakdown)
         // Buscamos si hubo un cierre anterior en la misma sesión para este cajero
         final previousClosure = await db.query(
           'transactions',
-          where: 'session_id = ? AND cashier_id = ? AND product_id = ? AND created_at < ?',
+          where:
+              'session_id = ? AND cashier_id = ? AND product_id = ? AND created_at < ?',
           whereArgs: [sessionId, cashierId, 'CIERRE DE CAJA', createdAt],
           orderBy: 'created_at DESC',
           limit: 1,
         );
         String? previousCreatedAt;
         if (previousClosure.isNotEmpty) {
-           previousCreatedAt = previousClosure.first['created_at']?.toString();
+          previousCreatedAt = previousClosure.first['created_at']?.toString();
         }
 
-        String breakdownWhere = 'session_id = ? AND cashier_id = ? AND product_id != ? AND product_id != ? AND product_id != ? AND created_at <= ?';
-        List<Object?> breakdownArgs = [sessionId, cashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', createdAt];
-        
+        String breakdownWhere =
+            'session_id = ? AND cashier_id = ? AND product_id != ? AND product_id != ? AND product_id != ? AND created_at <= ?';
+        List<Object?> breakdownArgs = [
+          sessionId,
+          cashierId,
+          'CIERRE DE CAJA',
+          'APERTURA DE CAJA',
+          'INGRESO_FISCALIZADOR',
+          createdAt
+        ];
+
         if (previousCreatedAt != null) {
           breakdownWhere += ' AND created_at > ?';
           breakdownArgs.add(previousCreatedAt);
         }
 
-        final unclosedSales = await db.query(
-          'transactions', 
-          where: breakdownWhere, 
-          whereArgs: breakdownArgs
-        );
-        
+        final unclosedSales = await db.query('transactions',
+            where: breakdownWhere, whereArgs: breakdownArgs);
+
         Map<String, int> breakdownQty = {};
         Map<String, double> breakdownTotal = {};
         for (final sale in unclosedSales) {
@@ -564,7 +594,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           final t = breakdownTotal[pId] ?? 0;
           final pName = productNames[pId] ?? 'Tarifa $pId';
           final qtyStr = '${qty}x'.padRight(4);
-          final nameStr = pName.length > 15 ? pName.substring(0, 15) : pName.padRight(15);
+          final nameStr =
+              pName.length > 15 ? pName.substring(0, 15) : pName.padRight(15);
           final valStr = '\$${CurrencyFormatter.format(t)}'.padLeft(8);
           breakdownLines.add('$qtyStr $nameStr $valStr');
         });
@@ -572,27 +603,42 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         // 2. Reconstruir Resumen del Día (Arrastre)
         final lastSaleQuery = await db.query(
           'transactions',
-          where: 'session_id = ? AND cashier_id = ? AND product_id NOT IN (?, ?, ?, ?)',
-          whereArgs: [sessionId, cashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', 'PMR'],
+          where:
+              'session_id = ? AND cashier_id = ? AND product_id NOT IN (?, ?, ?, ?)',
+          whereArgs: [
+            sessionId,
+            cashierId,
+            'CIERRE DE CAJA',
+            'APERTURA DE CAJA',
+            'INGRESO_FISCALIZADOR',
+            'PMR'
+          ],
           orderBy: 'created_at DESC',
           limit: 1,
         );
-        String? limitDate = createdAt?.toString(); // Fallback al cierre si no tiene ventas
+        String? limitDate =
+            createdAt?.toString(); // Fallback al cierre si no tiene ventas
         if (lastSaleQuery.isNotEmpty) {
-          limitDate = lastSaleQuery.first['created_at']?.toString() ?? createdAt?.toString();
+          limitDate = lastSaleQuery.first['created_at']?.toString() ??
+              createdAt?.toString();
         }
 
-        final allSales = await db.query(
-          'transactions', 
-          where: 'session_id = ? AND product_id != ? AND product_id != ? AND product_id != ? AND created_at <= ?', 
-          whereArgs: [sessionId, 'CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', limitDate]
-        );
+        final allSales = await db.query('transactions',
+            where:
+                'session_id = ? AND product_id != ? AND product_id != ? AND product_id != ? AND created_at <= ?',
+            whereArgs: [
+              sessionId,
+              'CIERRE DE CAJA',
+              'APERTURA DE CAJA',
+              'INGRESO_FISCALIZADOR',
+              limitDate
+            ]);
 
         int dayCount = 0;
         double dayTotalAmount = 0;
         Map<String, int> dayBreakdownQty = {};
         Map<String, double> dayBreakdownTotal = {};
-        
+
         for (final sale in allSales) {
           if (sale['product_id'] == 'PMR') continue;
           final amount = (sale['amount'] as num?)?.toDouble() ?? 0;
@@ -600,15 +646,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           dayCount++;
           dayTotalAmount += amount;
           dayBreakdownQty[productId] = (dayBreakdownQty[productId] ?? 0) + 1;
-          dayBreakdownTotal[productId] = (dayBreakdownTotal[productId] ?? 0) + amount;
+          dayBreakdownTotal[productId] =
+              (dayBreakdownTotal[productId] ?? 0) + amount;
         }
-        
+
         List<String> dayBreakdownLines = [];
         dayBreakdownQty.forEach((pId, qty) {
           final t = dayBreakdownTotal[pId] ?? 0;
           final pName = productNames[pId] ?? 'Tarifa $pId';
           final qtyStr = '${qty}x'.padRight(4);
-          final nameStr = pName.length > 15 ? pName.substring(0, 15) : pName.padRight(15);
+          final nameStr =
+              pName.length > 15 ? pName.substring(0, 15) : pName.padRight(15);
           final valStr = '\$${CurrencyFormatter.format(t)}'.padLeft(8);
           dayBreakdownLines.add('$qtyStr $nameStr $valStr');
         });
@@ -620,14 +668,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         };
 
         Map<String, dynamic>? cashList;
-        if (data.containsKey('coins_total') && data.containsKey('bills_total')) {
+        if (data.containsKey('coins_total') &&
+            data.containsKey('bills_total')) {
           cashList = {
             'coins_total': data['coins_total'],
             'bills_total': data['bills_total'],
           };
         }
-        final double? cash = data['cash'] != null ? (data['cash'] as num).toDouble() : null;
-        final double? balance = data['balance'] != null ? (data['balance'] as num).toDouble() : null;
+        final double? cash =
+            data['cash'] != null ? (data['cash'] as num).toDouble() : null;
+        final double? balance = data['balance'] != null
+            ? (data['balance'] as num).toDouble()
+            : null;
 
         final userEmail = ref.read(authProvider).user?.email ?? '01';
         final currentUserCode = userEmail.split('@').first;
@@ -641,9 +693,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           shouldPrintBreakdown = true;
         }
 
-        final posName = await ref.read(localStorageProvider).getPosLocationName();
+        final posName =
+            await ref.read(localStorageProvider).getPosLocationName();
         final branchName = posName ?? authState.user?.branchName ?? 'Sucursal';
-        
+
         final endDate = data["d"]?.toString() ?? 'Fecha no disp.';
         final endTimeStr = data["t"]?.toString() ?? '';
 
@@ -693,7 +746,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
-  Future<void> _showPendingClosureDialog(int cashierId, int sessionId, List<Map<String, dynamic>> unclosedSales) async {
+  Future<void> _showPendingClosureDialog(int cashierId, int sessionId,
+      List<Map<String, dynamic>> unclosedSales) async {
     final confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -705,7 +759,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           children: [
             Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 32),
             SizedBox(width: 10),
-            Text('Ventas Pendientes', style: TextStyle(fontWeight: FontWeight.bold)),
+            Text('Ventas Pendientes',
+                style: TextStyle(fontWeight: FontWeight.bold)),
           ],
         ),
         content: const Text(
@@ -715,16 +770,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('CANCELAR', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+            child: const Text('CANCELAR',
+                style:
+                    TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF6642F8),
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
             ),
-            child: const Text('SÍ, CERRAR CAJA', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text('SÍ, CERRAR CAJA',
+                style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -737,10 +796,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         final amount = (sale['amount'] as num?)?.toDouble() ?? 0;
         totalSistema += amount;
       }
-      
+
       ClosingHelper.performClosing(
-        context, 
-        ref, 
+        context,
+        ref,
         false, // isLogout
         isArrastre: true,
         cash: 0,
@@ -789,6 +848,33 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               onTap: () {
                 Navigator.pop(ctx);
                 _exportTransactions();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.sync_problem, color: Colors.orange),
+              title: const Text('Forzar Reenvío de Ventas (Debug)'),
+              subtitle: const Text(
+                  'Marca las ventas enviadas como pendientes para reintentar'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final todayStr = DateTime.now().toIso8601String().split('T')[0];
+                final db = await DatabaseHelper.instance.database;
+                int count = await db.rawUpdate('''
+                  UPDATE transactions 
+                  SET status = 'pending' 
+                  WHERE status = 'synced' 
+                    AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', 'PMR')
+                    AND created_at LIKE ?
+                ''', ['$todayStr%']);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text('Se marcaron $count ventas para reenvío'),
+                    backgroundColor: Colors.green,
+                  ));
+                }
+                ref
+                    .read(systemStatusProvider.notifier)
+                    .forceCheckPendingTransactions();
               },
             ),
             if (isDeviceOwner && !isInKiosk)
@@ -882,14 +968,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       sb.writeln('Fecha: ${DateTime.now().toIso8601String()}');
       sb.writeln('Total registros: ${txs.length}');
       sb.writeln('==============================\n');
-      
+
       for (final tx in txs) {
         sb.writeln(jsonEncode(tx));
       }
-      
+
       File? file;
       String finalPath = '';
-      
+
       try {
         // Opción 1: Carpeta de descargas pública
         final Directory downDir = Directory('/storage/emulated/0/Download');
@@ -919,44 +1005,47 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           finalPath = file.path;
         }
       }
-      
+
       if (mounted) {
         Navigator.pop(context); // Cerrar loader
         showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Tramas Guardadas'),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('Archivo guardado en:', style: const TextStyle(fontWeight: FontWeight.bold)),
-                    SelectableText(finalPath, style: const TextStyle(color: Colors.blue)),
-                    const SizedBox(height: 10),
-                    const Divider(),
-                    const Text('Contenido:'),
-                    const SizedBox(height: 10),
-                    SelectableText(sb.toString()),
+            context: context,
+            builder: (ctx) => AlertDialog(
+                  title: const Text('Tramas Guardadas'),
+                  content: SizedBox(
+                    width: double.maxFinite,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('Archivo guardado en:',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold)),
+                          SelectableText(finalPath,
+                              style: const TextStyle(color: Colors.blue)),
+                          const SizedBox(height: 10),
+                          const Divider(),
+                          const Text('Contenido:'),
+                          const SizedBox(height: 10),
+                          SelectableText(sb.toString()),
+                        ],
+                      ),
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('CERRAR'),
+                    )
                   ],
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('CERRAR'),
-              )
-            ],
-          )
-        );
+                ));
       }
     } catch (e) {
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error al exportar: $e', style: const TextStyle(fontWeight: FontWeight.bold)),
+          content: Text('Error al exportar: $e',
+              style: const TextStyle(fontWeight: FontWeight.bold)),
           backgroundColor: Colors.redAccent,
         ));
       }
@@ -1054,7 +1143,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         children: [
           Center(
             child: KioskLogoButton(
-              pin: '9999',
+              pin: '1510',
               requiredTaps: 3,
               onSuccess: _showSupportOptions,
               child: Image.asset(
@@ -1143,7 +1232,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFF6642F8), width: 2),
+                  borderSide:
+                      const BorderSide(color: Color(0xFF6642F8), width: 2),
                 ),
               ),
               validator: (v) {
@@ -1172,9 +1262,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 fillColor: const Color(0xFF6642F8).withOpacity(0.05),
                 suffixIcon: IconButton(
                   icon: Icon(
-                      _obscurePin ? Icons.visibility_off : Icons.visibility, size: 28),
-                  onPressed: () =>
-                      setState(() => _obscurePin = !_obscurePin),
+                      _obscurePin ? Icons.visibility_off : Icons.visibility,
+                      size: 28),
+                  onPressed: () => setState(() => _obscurePin = !_obscurePin),
                 ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
@@ -1210,163 +1300,180 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final authState = ref.watch(authProvider);
     final systemStatus = ref.watch(systemStatusProvider);
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        surfaceTintColor: Colors.white,
-        leadingWidth: 100,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 8.0),
-          child: ElevatedButton(
-            onPressed: _scanLoginQR,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF6642F8).withOpacity(0.1),
-              foregroundColor: const Color(0xFF6642F8),
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              padding: EdgeInsets.zero,
-            ),
-            child: const Icon(Icons.qr_code_scanner, size: 45),
-          ),
-        ),
-        actions: [
-          IconButton(
-            onPressed: _showPendingSalesModal,
-            tooltip: _hasUnclosedSales
-                ? 'Ver ventas pendientes de cierre'
-                : 'No hay ventas pendientes',
-            icon: Icon(
-              Icons.account_balance_wallet_rounded,
-              color: _hasUnclosedSales ? Colors.redAccent : Colors.green,
-              size: 40,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Icon(Icons.accessible_rounded,
-              color:
-                  systemStatus.isPmrConnected ? Colors.green : Colors.redAccent,
-              size: 40),
-          const SizedBox(width: 16),
-          Icon(Icons.camera_alt_rounded,
-              color: systemStatus.isCameraConnected
-                  ? Colors.green
-                  : Colors.redAccent,
-              size: 40),
-          const SizedBox(width: 16),
-          Icon(Icons.print_rounded,
-              color: systemStatus.isPrinterConnected
-                  ? Colors.green
-                  : Colors.redAccent,
-              size: 40),
-          const SizedBox(width: 16),
-          Icon(Icons.wifi_rounded,
-              color: systemStatus.isInternetConnected
-                  ? Colors.green
-                  : Colors.redAccent,
-              size: 40),
-          const SizedBox(width: 16),
-          if (systemStatus.pendingTransactions > 0)
-            Center(
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                    color: Colors.orange,
-                    borderRadius: BorderRadius.circular(16)),
-                child: Text('${systemStatus.pendingTransactions}',
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18)),
+    return Stack(
+      children: [
+        Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            backgroundColor: Colors.white,
+            elevation: 0,
+            surfaceTintColor: Colors.white,
+            leadingWidth: 100,
+            leading: Padding(
+              padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 8.0),
+              child: ElevatedButton(
+                onPressed: _isLoadingLogin ? null : _scanLoginQR,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6642F8).withOpacity(0.1),
+                  foregroundColor: const Color(0xFF6642F8),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: EdgeInsets.zero,
+                ),
+                child: const Icon(Icons.qr_code_scanner, size: 45),
               ),
             ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _printLastClosure,
-        backgroundColor: const Color(0xFF6642F8),
-        tooltip: 'Imprimir último cierre',
-        child: const Icon(Icons.point_of_sale_rounded, color: Colors.white),
-      ),
-      body: Stack(
-        children: [
-          SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                if (constraints.maxWidth > 800) {
-                  // Pantalla grande: Mostrar en dos columnas (Row)
-                  return Center(
-                    child: Padding(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 48, vertical: 24),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Expanded(
-                            flex: 5,
-                            child: SingleChildScrollView(
-                              child: Padding(
-                                padding: const EdgeInsets.only(right: 32),
-                                child: _buildForm(),
-                              ),
-                            ),
-                          ),
-                          Container(
-                              width: 1, height: 400, color: Colors.grey.shade200),
-                          Expanded(
-                            flex: 6,
-                            child: Center(
-                              child: SingleChildScrollView(
-                                child: Padding(
-                                  padding: const EdgeInsets.only(left: 32),
-                                  child: _buildNumPad(authState),
+            actions: [
+              IconButton(
+                onPressed: _showPendingSalesModal,
+                tooltip: _hasUnclosedSales
+                    ? 'Ver ventas pendientes de cierre'
+                    : 'No hay ventas pendientes',
+                icon: Icon(
+                  Icons.account_balance_wallet_rounded,
+                  color: _hasUnclosedSales ? Colors.redAccent : Colors.green,
+                  size: 40,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Icon(Icons.accessible_rounded,
+                  color:
+                      systemStatus.isPmrConnected ? Colors.green : Colors.redAccent,
+                  size: 40),
+              const SizedBox(width: 16),
+              Icon(Icons.camera_alt_rounded,
+                  color: systemStatus.isCameraConnected
+                      ? Colors.green
+                      : Colors.redAccent,
+                  size: 40),
+              const SizedBox(width: 16),
+              Icon(Icons.print_rounded,
+                  color: systemStatus.isPrinterConnected
+                      ? Colors.green
+                      : Colors.redAccent,
+                  size: 40),
+              const SizedBox(width: 16),
+              Icon(Icons.wifi_rounded,
+                  color: systemStatus.isInternetConnected
+                      ? Colors.green
+                      : Colors.redAccent,
+                  size: 40),
+              const SizedBox(width: 16),
+              if (systemStatus.pendingTransactions > 0)
+                Center(
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                        color: Colors.orange,
+                        borderRadius: BorderRadius.circular(16)),
+                    child: Text('${systemStatus.pendingTransactions}',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18)),
+                  ),
+                ),
+              const SizedBox(width: 8),
+            ],
+          ),
+          floatingActionButton: FloatingActionButton(
+            onPressed: _printLastClosure,
+            backgroundColor: const Color(0xFF6642F8),
+            tooltip: 'Imprimir último cierre',
+            child: const Icon(Icons.point_of_sale_rounded, color: Colors.white),
+          ),
+          body: Stack(
+            children: [
+              SafeArea(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    if (constraints.maxWidth > 800) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 48, vertical: 24),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Expanded(
+                                flex: 5,
+                                child: SingleChildScrollView(
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(right: 32),
+                                    child: _buildForm(),
+                                  ),
                                 ),
                               ),
-                            ),
+                              Container(
+                                  width: 1,
+                                  height: 400,
+                                  color: Colors.grey.shade200),
+                              Expanded(
+                                flex: 6,
+                                child: Center(
+                                  child: SingleChildScrollView(
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(left: 32),
+                                      child: _buildNumPad(authState),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
-                  );
-                } else {
-                  // Pantalla pequeña: Mostrar en una sola columna (Column)
-                  return Center(
-                    child: SingleChildScrollView(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _buildForm(),
-                          const SizedBox(height: 48),
-                          _buildNumPad(authState),
-                        ],
-                      ),
-                    ),
-                  );
-                }
-              },
-            ),
+                        ),
+                      );
+                    } else {
+                      return Center(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 24, vertical: 32),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _buildForm(),
+                              const SizedBox(height: 48),
+                              _buildNumPad(authState),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ),
+              Positioned(
+                bottom: 16,
+                left: 16,
+                child: Text(
+                  '${ApiConstants.displayVersion} - MAC: ${_macAddress.isEmpty ? 'Cargando...' : _macAddress}',
+                  style: const TextStyle(
+                    color: Colors.black54,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
           ),
-          Positioned(
-            bottom: 16,
-            left: 16,
-            child: Text(
-              '${ApiConstants.displayVersion} - MAC: ${_macAddress.isEmpty ? 'Cargando...' : _macAddress}',
-              style: const TextStyle(
-                color: Colors.black54,
-                fontWeight: FontWeight.bold,
+        ),
+        if (_isLoadingLogin)
+          Positioned.fill(
+            child: AbsorbPointer(
+              child: Container(
+                color: Colors.black45,
+                child: const Center(
+                  child: CircularProgressIndicator(
+                    color: Color(0xFF6642F8),
+                  ),
+                ),
               ),
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 }

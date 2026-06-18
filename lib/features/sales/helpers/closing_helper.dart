@@ -36,14 +36,17 @@ class ClosingHelper {
     final branchId = await storage.getBranchId() ?? 0;
     
     final sessionQuery = await db.query('sessions', where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
-    if (sessionQuery.isEmpty) return 0;
+    final user = ref.read(authProvider).user;
+    if (user == null) return 0;
+    final sessionId = sessionQuery.isEmpty ? null : sessionQuery.first['id'] as int?;
 
-    final currentCashierId = ref.read(authProvider).user?.id ?? 1;
-    final sessionId = sessionQuery.first['id'] as int;
+    final now = DateTime.now();
+    final todayStr = "\${now.year}-\${now.month.toString().padLeft(2, '0')}-\${now.day.toString().padLeft(2, '0')}";
+
     final unclosedSales = await db.query(
       'transactions', 
-      where: 'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id != ? AND product_id != ?', 
-      whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA']
+      where: '(session_id = ? OR (? IS NULL AND session_id IS NULL) OR (session_id IS NULL AND created_at LIKE ?)) AND is_closed = 0 AND product_id != ? AND product_id != ?', 
+      whereArgs: [sessionId, sessionId, '$todayStr%', 'CIERRE DE CAJA', 'APERTURA DE CAJA']
     );
 
     double totalAmount = 0;
@@ -112,12 +115,15 @@ class ClosingHelper {
     double? balance,
     String? limitDate,
   }) async {
+    final now = DateTime.now();
+    final todayStr = "\${now.year}-\${now.month.toString().padLeft(2, '0')}-\${now.day.toString().padLeft(2, '0')}";
+
     String query = '''
       SELECT product_id, COUNT(*) as qty, SUM(amount) as total_amount
       FROM transactions
-      WHERE session_id = ? AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', 'PMR')
+      WHERE created_at LIKE ? AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', 'PMR')
     ''';
-    List<dynamic> args = [sessionId];
+    List<dynamic> args = ['$todayStr%'];
     
     if (limitDate != null) {
       query += ' AND created_at <= ?';
@@ -188,13 +194,21 @@ class ClosingHelper {
         return;
       }
 
-      final currentCashierId = ref.read(authProvider).user?.id ?? 1;
+      final user = ref.read(authProvider).user;
+      if (user == null) {
+        if (context.mounted) Navigator.pushReplacementNamed(context, '/login');
+        return;
+      }
       final sessionId = sessionQuery.first['id'] as int;
+
+      final now = DateTime.now();
+      final todayStr = "\${now.year}-\${now.month.toString().padLeft(2, '0')}-\${now.day.toString().padLeft(2, '0')}";
+
       final unclosedCountResult = await db.rawQuery('''
         SELECT COUNT(*) as c 
         FROM transactions 
-        WHERE session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA')
-      ''', [sessionId, currentCashierId]);
+        WHERE (session_id = ? OR (? IS NULL AND session_id IS NULL) OR (session_id IS NULL AND created_at LIKE ?)) AND is_closed = 0 AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA')
+      ''', [sessionId, sessionId, '$todayStr%']);
       
       final totalUnclosedCount = (unclosedCountResult.first['c'] as int?) ?? 0;
 
@@ -209,9 +223,9 @@ class ClosingHelper {
       final unclosedAgg = await db.rawQuery('''
         SELECT product_id, COUNT(*) as qty, SUM(amount) as total_amount
         FROM transactions
-        WHERE session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA', 'PMR')
+        WHERE (session_id = ? OR (? IS NULL AND session_id IS NULL) OR (session_id IS NULL AND created_at LIKE ?)) AND is_closed = 0 AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA', 'PMR')
         GROUP BY product_id
-      ''', [sessionId, currentCashierId]);
+      ''', [sessionId, sessionId, '$todayStr%']);
 
       double totalAmount = 0;
       Map<String, int> breakdownQty = {};
@@ -327,8 +341,8 @@ class ClosingHelper {
       if (isArrastre) {
         final lastSaleQuery = await db.query(
           'transactions',
-          where: 'session_id = ? AND cashier_id = ? AND product_id NOT IN (?, ?, ?, ?)',
-          whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', 'PMR'],
+          where: 'created_at LIKE ? AND product_id NOT IN (?, ?, ?, ?)',
+          whereArgs: ['$todayStr%', 'CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', 'PMR'],
           orderBy: 'created_at DESC',
           limit: 1,
         );
@@ -590,7 +604,7 @@ class ClosingHelper {
                 if (!proceed) return;
               }
 
-              performClosing(context, ref, isLogout, isArrastre: isArrastre);
+              performClosing(context, ref, isLogout, isArrastre: isArrastre, skipPrinting: !isPrinterConnected);
             },
             icon: const Icon(Icons.print_rounded, size: 20),
             label: Text(isLogout ? 'CERRAR E IMPRIMIR' : 'CONFIRMAR', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
@@ -680,10 +694,10 @@ class ClosingHelper {
       if (!proceed) return;
     }
 
-    performClosing(context, ref, isLogout, cashList: cashList, cash: totalCash, balance: balance, isArrastre: isArrastre);
+    performClosing(context, ref, isLogout, cashList: cashList, cash: totalCash, balance: balance, isArrastre: isArrastre, skipPrinting: !isPrinterConnected);
   }
 
-  static Future<void> performClosing(BuildContext context, WidgetRef ref, bool isLogout, {dynamic cashList, double? cash, double? balance, bool isArrastre = false}) async {
+  static Future<void> performClosing(BuildContext context, WidgetRef ref, bool isLogout, {dynamic cashList, double? cash, double? balance, bool isArrastre = false, bool skipPrinting = false}) async {
     final db = await DatabaseHelper.instance.database;
     final storage = ref.read(localStorageProvider);
     final branchId = await storage.getBranchId() ?? 0;
@@ -696,13 +710,21 @@ class ClosingHelper {
     }
 
     final sessionId = sessionRows.first['id'] as int;
-    final currentCashierId = ref.read(authProvider).user?.id ?? 1;
+    final user = ref.read(authProvider).user;
+    if (user == null) {
+      if (context.mounted) Navigator.pushReplacementNamed(context, '/login');
+      return;
+    }
+
+    final now = DateTime.now();
+    final todayStr = "\${now.year}-\${now.month.toString().padLeft(2, '0')}-\${now.day.toString().padLeft(2, '0')}";
+
     try {
       final unclosedCountResult = await db.rawQuery('''
         SELECT COUNT(*) as c 
         FROM transactions 
-        WHERE session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA')
-      ''', [sessionId, currentCashierId]);
+        WHERE (session_id = ? OR (? IS NULL AND session_id IS NULL) OR (session_id IS NULL AND created_at LIKE ?)) AND is_closed = 0 AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA')
+      ''', [sessionId, sessionId, '$todayStr%']);
       
       final totalUnclosedCount = (unclosedCountResult.first['c'] as int?) ?? 0;
 
@@ -735,21 +757,21 @@ class ClosingHelper {
       final unclosedAgg = await db.rawQuery('''
         SELECT product_id, COUNT(*) as qty, SUM(amount) as total_amount
         FROM transactions
-        WHERE session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA', 'PMR')
+        WHERE (session_id = ? OR (? IS NULL AND session_id IS NULL) OR (session_id IS NULL AND created_at LIKE ?)) AND is_closed = 0 AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA', 'PMR')
         GROUP BY product_id
-      ''', [sessionId, currentCashierId]);
+      ''', [sessionId, sessionId, '$todayStr%']);
 
       final pmrSales = await db.rawQuery('''
         SELECT created_at 
         FROM transactions 
-        WHERE session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id = 'PMR'
-      ''', [sessionId, currentCashierId]);
+        WHERE (session_id = ? OR (? IS NULL AND session_id IS NULL) OR (session_id IS NULL AND created_at LIKE ?)) AND is_closed = 0 AND product_id = 'PMR'
+      ''', [sessionId, sessionId, '$todayStr%']);
       
       final reprintsResult = await db.rawQuery('''
         SELECT COUNT(*) as c 
         FROM transactions 
-        WHERE session_id = ? AND cashier_id = ? AND is_closed = 0 AND print_status = 2
-      ''', [sessionId, currentCashierId]);
+        WHERE (session_id = ? OR (? IS NULL AND session_id IS NULL) OR (session_id IS NULL AND created_at LIKE ?)) AND is_closed = 0 AND print_status = 2
+      ''', [sessionId, sessionId, '$todayStr%']);
 
       double totalAmount = 0;
       Map<String, int> breakdownQty = {};
@@ -835,15 +857,13 @@ class ClosingHelper {
 
     Map<String, dynamic>? daySummary;
     if (isArrastre) {
-      // Buscar la fecha de la última transacción real del usuario para el arrastre
-      final currentCashierId = ref.read(authProvider).user?.id ?? 1;
-      final lastSaleQuery = await db.query(
-        'transactions',
-        where: 'session_id = ? AND cashier_id = ? AND product_id NOT IN (?, ?, ?, ?)',
-        whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', 'PMR'],
-        orderBy: 'created_at DESC',
-        limit: 1,
-      );
+        final lastSaleQuery = await db.query(
+          'transactions',
+          where: 'created_at LIKE ? AND product_id NOT IN (?, ?, ?, ?)',
+          whereArgs: ['$todayStr%', 'CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', 'PMR'],
+          orderBy: 'created_at DESC',
+          limit: 1,
+        );
       
       String? lastSaleDate;
       if (lastSaleQuery.isNotEmpty) {
@@ -867,26 +887,31 @@ class ClosingHelper {
       }
     }
 
-    final printer = ref.read(printerServiceProvider);
-    final printResult = await printer.printClosingTicket(
-      cashierName: cashierName,
-      cashierId: cashierCode,
-      branchName: branchName,
-      posLocationId: posLocationId,
-      totalTransactions: totalUnclosedCount - pmrCount,
-      totalAmount: totalAmount,
-      startTime: startTimeLabel,
-      endTime: closingLabel,
-      qrData: qrData,
-      breakdown: shouldPrintBreakdown ? breakdownLines : null,
-      pmrCount: pmrCount,
-      pmrHours: pmrHours,
-      reprintsCount: reprintsCount,
-      cashList: cashList,
-      cash: cash,
-      balance: balance,
-      daySummary: daySummary,
-    );
+    bool? printResult;
+    if (skipPrinting) {
+      printResult = false;
+    } else {
+      final printer = ref.read(printerServiceProvider);
+      printResult = await printer.printClosingTicket(
+        cashierName: cashierName,
+        cashierId: cashierCode,
+        branchName: branchName,
+        posLocationId: posLocationId,
+        totalTransactions: totalUnclosedCount - pmrCount,
+        totalAmount: totalAmount,
+        startTime: startTimeLabel,
+        endTime: closingLabel,
+        qrData: qrData,
+        breakdown: shouldPrintBreakdown ? breakdownLines : null,
+        pmrCount: pmrCount,
+        pmrHours: pmrHours,
+        reprintsCount: reprintsCount,
+        cashList: cashList,
+        cash: cash,
+        balance: balance,
+        daySummary: daySummary,
+      );
+    }
 
     if (printResult == null && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -908,7 +933,7 @@ class ClosingHelper {
       await txn.insert('transactions', {
         'id': 'closure-${now.millisecondsSinceEpoch}',
         'session_id': currentSessionId,
-        'cashier_id': currentCashierId,
+        'cashier_id': user!.id,
         'pos_location_id': posLocationId,
         'product_id': 'CIERRE DE CAJA',
         'amount': totalAmount,
@@ -925,8 +950,8 @@ class ClosingHelper {
       await txn.update(
         'transactions',
         {'is_closed': 1},
-        where: '(session_id = ? OR (? IS NULL AND session_id IS NULL)) AND cashier_id = ? AND is_closed = 0 AND product_id != ?',
-        whereArgs: [currentSessionId, currentSessionId, currentCashierId, 'CIERRE DE CAJA'],
+        where: '(session_id = ? OR (? IS NULL AND session_id IS NULL) OR (session_id IS NULL AND created_at LIKE ?)) AND is_closed = 0 AND product_id != ?',
+        whereArgs: [currentSessionId, currentSessionId, '$todayStr%', 'CIERRE DE CAJA'],
       );
     });
 
