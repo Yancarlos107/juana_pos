@@ -1,6 +1,5 @@
 class ApiConstants {
-  static const bool isProduction =
-      false; // <-- Cambiar a false para usar el entorno de pruebas
+  static const bool isProduction = true;
 
   static const String baseUrlProd = 'http://35.208.37.141:8089/api';
   static const String baseUrlDev = 'http://35.209.80.61:8089/api';
@@ -8,7 +7,7 @@ class ApiConstants {
   static const String baseUrl = isProduction ? baseUrlProd : baseUrlDev;
 
   // Versión de la aplicación
-  static const String appVersion = '1.6.9';
+  static const String appVersion = '1.6.11';
   static String get displayVersion =>
       isProduction ? 'v$appVersion' : 'v_test $appVersion';
 

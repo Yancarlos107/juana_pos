@@ -276,6 +276,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             _emailController.text.trim(),
             _pinController.text.trim(),
           );
+      
+      final authResult = ref.read(authProvider);
+      if (mounted && authResult.status == AuthStatus.authenticated) {
+        await ref.read(localStorageProvider).setFirstLoginCompleted();
+      }
     } else {
       final pin = _pinController.text.trim();
       final db = await DatabaseHelper.instance.database;
@@ -334,7 +339,45 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (mounted) {
         if (success == true) {
           if (_isFirstLogin) {
-            await ref.read(localStorageProvider).setFirstLoginCompleted();
+            // Aseguramiento del PIN en SQLite para evitar que la inicialización lo borre o corrompa el hash
+            try {
+              final pin = _pinController.text.trim();
+              if (pin.isNotEmpty) {
+                final db = await DatabaseHelper.instance.database;
+                final userId = authState.user?.id;
+                final pinHash = sha1.convert(utf8.encode(pin)).toString();
+
+                if (userId != null) {
+                  // Actualizamos el hash si el usuario fue insertado por InitService
+                  final updatedCount = await db.update(
+                    'users',
+                    {'password_hash': pinHash},
+                    where: 'id = ?',
+                    whereArgs: [userId],
+                  );
+
+                  // Si el usuario fue borrado por completo y no venía en la lista de InitService, lo reinsertamos
+                  if (updatedCount == 0) {
+                    final user = authState.user!;
+                    final email = _emailController.text.trim();
+                    await db.insert(
+                      'users',
+                      {
+                        'id': user.id,
+                        'email': email,
+                        'password_hash': pinHash,
+                        'name': user.name,
+                        'branch_id': user.branchId,
+                        'roles': user.roles.join(','),
+                      },
+                    );
+                  }
+                }
+              }
+            } catch (e) {
+              print('DEBUG: Error asegurando PIN post-login: $e');
+            }
+
             setState(() => _isFirstLogin = false);
             _emailController.clear();
             _pinController.clear();
