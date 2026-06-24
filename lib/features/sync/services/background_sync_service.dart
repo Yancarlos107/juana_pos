@@ -13,7 +13,8 @@ import '../../../core/network/dio_client.dart';
 import '../../../core/storage/local_storage_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/utils/device_utils.dart';
-
+import '../../../core/services/kiosk_service.dart';
+import '../../../core/constants/api_constants.dart';
 final backgroundSyncProvider = Provider<BackgroundSyncService>((ref) {
   final dio = ref.watch(dioProvider);
   final storage = ref.watch(localStorageProvider);
@@ -86,6 +87,7 @@ class BackgroundSyncService {
       // Obtener el ID de la ubicación POS y el hash del dispositivo
       final posLocationId = await _storage.getPosLocationId();
       final deviceHash = await _storage.getDeviceHash();
+      final isKiosk = await KioskService.isInKioskMode();
 
       // Agrupar ventas por cashier_id
       Map<int, List<Map<String, dynamic>>> salesByCashier = {};
@@ -134,6 +136,8 @@ class BackgroundSyncService {
                 "mac_address": tx['mac_address'],
                 "plot_id": tx['plot_id'] ?? _generatePlotId(),
                 "type_code": "RC173",
+                "app_version": ApiConstants.appVersion,
+                "kiosk_mode": isKiosk,
                 "datetime": DateTime.parse(tx['created_at'].toString())
                         .millisecondsSinceEpoch ~/
                     1000
@@ -151,7 +155,7 @@ class BackgroundSyncService {
               "ime": "-1",
               "employee_full_name": "-1",
               "typ": "RC173",
-              "ver": "1.0.0",
+              "ver": ApiConstants.appVersion,
               "pos_location_id": "-1",
             };
             // Loggear el body completo para validación

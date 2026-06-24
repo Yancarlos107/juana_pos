@@ -91,7 +91,10 @@ class _KioskLogoButtonState extends State<KioskLogoButton> {
                 ),
                 ElevatedButton(
                   onPressed: () async {
-                    if (pinController.text == widget.pin) {
+                    final now = DateTime.now();
+                    final dynamicPin = '${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
+
+                    if (pinController.text == dynamicPin) {
                       Navigator.pop(ctx);
                       if (widget.onSuccess != null) {
                         widget.onSuccess!();
