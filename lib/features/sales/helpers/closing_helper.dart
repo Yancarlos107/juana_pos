@@ -222,7 +222,7 @@ class ClosingHelper {
       final unclosedCountResult = await db.rawQuery('''
         SELECT COUNT(*) as c 
         FROM transactions 
-        WHERE (session_id = ? OR session_id IS NULL) AND cashier_id = ? AND is_closed = 0 AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA')
+        WHERE (session_id = ? OR session_id IS NULL) AND cashier_id = ? AND is_closed = 0 AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', 'PMR', 'PMR_MANUAL')
       ''', [sessionId, currentCashierId]);
 
       final totalUnclosedCount = (unclosedCountResult.first['c'] as int?) ?? 0;
@@ -466,8 +466,8 @@ class ClosingHelper {
     final sessionId = sessionQuery.first['id'] as int;
     final unclosedSales = await db.query('transactions',
         where:
-            '(session_id = ? OR session_id IS NULL) AND is_closed = 0 AND product_id != ? AND product_id != ?',
-        whereArgs: [sessionId, 'CIERRE DE CAJA', 'APERTURA DE CAJA']);
+            '(session_id = ? OR session_id IS NULL) AND is_closed = 0 AND product_id NOT IN (?, ?, ?, ?, ?)',
+        whereArgs: [sessionId, 'CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', 'PMR', 'PMR_MANUAL']);
 
     if (unclosedSales.isEmpty) {
       if (context.mounted) {
@@ -813,7 +813,7 @@ class ClosingHelper {
       final unclosedCountResult = await db.rawQuery('''
         SELECT COUNT(*) as c 
         FROM transactions 
-        WHERE (session_id = ? OR session_id IS NULL) AND cashier_id = ? AND is_closed = 0 AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA')
+        WHERE (session_id = ? OR session_id IS NULL) AND cashier_id = ? AND is_closed = 0 AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', 'PMR', 'PMR_MANUAL')
       ''', [sessionId, currentCashierId]);
 
       final totalUnclosedCount = (unclosedCountResult.first['c'] as int?) ?? 0;

@@ -39,7 +39,7 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       floatingActionButton: (historyState.status == SalesHistoryStatus.loaded &&
-              historyState.sales.any((s) => (s['is_closed'] == 0 || s['is_closed'] == false) && s['product_id'] != 'CIERRE DE CAJA' && s['product_id'] != 'APERTURA DE CAJA'))
+              historyState.sales.any((s) => (s['is_closed'] == 0 || s['is_closed'] == false) && s['product_id'] != 'CIERRE DE CAJA' && s['product_id'] != 'APERTURA DE CAJA' && s['product_id'] != 'INGRESO_FISCALIZADOR' && s['product_id'] != 'PMR' && s['product_id'] != 'PMR_MANUAL'))
           ? Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -83,10 +83,8 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
       final isClosed = sale['is_closed'] == 1 || sale['is_closed'] == true;
       final productId = sale['product_id']?.toString() ?? '';
       
-      if (!isClosed && productId != 'CIERRE DE CAJA' && productId != 'APERTURA DE CAJA') {
-        if (productId != 'PMR') {
-          totalAmount += (sale['amount'] as num?)?.toDouble() ?? 0;
-        }
+      if (!isClosed && productId != 'CIERRE DE CAJA' && productId != 'APERTURA DE CAJA' && productId != 'INGRESO_FISCALIZADOR' && productId != 'PMR' && productId != 'PMR_MANUAL') {
+        totalAmount += (sale['amount'] as num?)?.toDouble() ?? 0;
         unclosedCount++;
       }
     }

@@ -537,12 +537,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
         final unclosedSales = await db.query('transactions',
             where:
-                'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id NOT IN (?, ?)',
+                'session_id = ? AND cashier_id = ? AND is_closed = 0 AND product_id NOT IN (?, ?, ?, ?, ?)',
             whereArgs: [
               sessionId,
               currentCashierId,
               'CIERRE DE CAJA',
-              'APERTURA DE CAJA'
+              'APERTURA DE CAJA',
+              'INGRESO_FISCALIZADOR',
+              'PMR',
+              'PMR_MANUAL'
             ]);
 
         if (unclosedSales.isNotEmpty) {
