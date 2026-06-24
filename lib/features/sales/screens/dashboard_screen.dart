@@ -536,7 +536,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             BottomNavigationBarItem(
                 icon: Icon(Icons.inbox_rounded), label: 'Cierre'),
             BottomNavigationBarItem(
-                icon: Icon(Icons.logout_rounded, color: Colors.redAccent), label: 'Cerrar Sesión')
+                icon: Icon(Icons.logout_rounded, color: Colors.redAccent), label: 'SALIR')
           ],
         ),
       ),
