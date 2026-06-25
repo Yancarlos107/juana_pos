@@ -12,6 +12,7 @@ class LocalStorageRepository {
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
   static const String _tokenKey = 'sanctum_token';
+  static const String _tokenValidatorKey = 'token_validator';
   static const String _branchIdKey = 'branch_id';
   static const String _userRolesKey = 'user_roles';
   static const String _balanceKey = 'branch_balance';
@@ -48,6 +49,14 @@ class LocalStorageRepository {
 
   Future<void> deleteToken() async {
     await _secureStorage.delete(key: _tokenKey);
+  }
+
+  Future<void> saveTokenValidator(String token) async {
+    await _secureStorage.write(key: _tokenValidatorKey, value: token);
+  }
+
+  Future<String?> getTokenValidator() async {
+    return await _secureStorage.read(key: _tokenValidatorKey);
   }
 
   // ================= Manejo de Datos de Usuario =================

@@ -8,21 +8,25 @@ import '../../../core/network/dio_client.dart';
 import '../models/system_status.dart';
 import '../../sync/services/background_sync_service.dart';
 import '../../printer/services/printer_service.dart';
+import '../../sync/services/init_service.dart';
 
 final systemStatusProvider = StateNotifierProvider<SystemStatusNotifier, SystemStatus>((ref) {
   final dio = ref.watch(dioProvider);
   final syncService = ref.watch(backgroundSyncProvider);
   final printerService = ref.watch(printerServiceProvider);
-  return SystemStatusNotifier(dio, syncService, printerService);
+  final initService = ref.watch(initServiceProvider);
+  return SystemStatusNotifier(dio, syncService, printerService, initService);
 });
 
 class SystemStatusNotifier extends StateNotifier<SystemStatus> {
   final Dio _dio;
   final BackgroundSyncService _syncService;
   final PrinterService _printerService;
+  final InitService _initService;
   Timer? _timer;
+  DateTime? _lastConfigSync;
 
-  SystemStatusNotifier(this._dio, this._syncService, this._printerService) : super(SystemStatus()) {
+  SystemStatusNotifier(this._dio, this._syncService, this._printerService, this._initService) : super(SystemStatus()) {
     _initMonitoring();
   }
 
@@ -53,6 +57,18 @@ class SystemStatusNotifier extends StateNotifier<SystemStatus> {
     final isPmrConnected = await _checkPmr();
     final isCameraConnected = await _checkCameraPing();
     final pendingCount = await _checkPendingTransactions();
+
+    if (isOnline) {
+      final now = DateTime.now();
+      if (_lastConfigSync == null || now.difference(_lastConfigSync!).inMinutes >= 5) {
+        _lastConfigSync = now;
+        try {
+          await _initService.initializePOS();
+        } catch (e) {
+          // Ignorar silenciosamente errores de red en background
+        }
+      }
+    }
 
     // Actualizamos el estado de la UI una sola vez para evitar 5 rebuilds consecutivos
     // que estaban causando lentitud extrema en la app cada 5 segundos.

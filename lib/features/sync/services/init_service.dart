@@ -25,8 +25,11 @@ class InitService {
 
   Future<Map<String, dynamic>> initializePOS() async {
     try {
-      final token = await _storage.getToken();
-      if (token == null) throw Exception('No hay token disponible para la inicialización.');
+      final tokenValidator = await _storage.getTokenValidator();
+      final userToken = await _storage.getToken();
+      final activeToken = tokenValidator ?? userToken;
+
+      if (activeToken == null) throw Exception('No hay token disponible para la inicialización.');
 
       final macAddress = await DeviceUtils.getMacAddress();
 
@@ -38,7 +41,7 @@ class InitService {
         },
         options: Options(
           headers: {
-            'Authorization': 'Bearer $token',
+            'Authorization': 'Bearer $activeToken',
             'Accept': 'application/json',
           },
         ),
@@ -97,6 +100,17 @@ class InitService {
             await _storage.savePosLocationName(locName.toString());
             await updatePosSchedule(locId as int);
             autoAssignedLocation = true;
+          }
+        }
+      }
+
+      // 4. Extraer token validator
+      if (data.containsKey('config') && data['config'] != null) {
+        final configData = data['config'];
+        if (configData is Map && configData.containsKey('token_validator')) {
+          final tokenVal = configData['token_validator'];
+          if (tokenVal != null) {
+            await _storage.saveTokenValidator(tokenVal.toString());
           }
         }
       }
