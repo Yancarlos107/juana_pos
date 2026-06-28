@@ -24,6 +24,7 @@ import '../../../core/constants/api_constants.dart';
 import '../../../core/utils/device_utils.dart';
 import '../../../core/utils/crypto_utils.dart';
 import 'package:barcode_scan2/barcode_scan2.dart';
+import '../../sync/services/database_maintenance_service.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -50,6 +51,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   void initState() {
     super.initState();
+    DatabaseMaintenanceService.runMaintenance(ref.read(localStorageProvider));
     _activeController = _pinController;
     _checkFirstLogin();
     WidgetsBinding.instance.addPostFrameCallback((_) {
