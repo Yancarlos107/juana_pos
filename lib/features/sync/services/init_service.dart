@@ -154,8 +154,8 @@ class InitService {
             print('DEBUG OTA: Backend reporta versión [$newVersion] con URL [$urlApk]');
             print('DEBUG OTA: Versión actual instalada es [$oldVersion]');
             
-            if (true || newVersion != oldVersion) {
-              print('DEBUG OTA: ¡Hay actualización! Disparando OtaUpdateService... (Forzado para pruebas)');
+            if (newVersion != oldVersion) {
+              print('DEBUG OTA: ¡Hay actualización! Disparando OtaUpdateService...');
               OtaUpdateService.triggerUpdateModal(newVersion, urlApk);
             } else {
               print('DEBUG OTA: Ya estamos en la última versión, se ignora.');

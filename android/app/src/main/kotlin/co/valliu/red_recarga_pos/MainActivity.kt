@@ -1,8 +1,10 @@
 package co.Juana.red_recarga_pos
 
 import android.app.ActivityManager
+import android.app.AlarmManager
 import android.app.PendingIntent
 import android.app.admin.DevicePolicyManager
+import android.os.SystemClock
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
@@ -192,6 +194,17 @@ class MainActivity : FlutterActivity() {
                                     DevicePolicyManager.LOCK_TASK_FEATURE_NONE
                                 )
                             }
+                            // Declara esta app como HOME permanente: sobrevive OTA updates y
+                            // reinicios sin necesidad de startActivity() desde background.
+                            val homeFilter = IntentFilter(Intent.ACTION_MAIN).apply {
+                                addCategory(Intent.CATEGORY_HOME)
+                                addCategory(Intent.CATEGORY_DEFAULT)
+                            }
+                            dpm.addPersistentPreferredActivity(
+                                adminComponent,
+                                homeFilter,
+                                ComponentName(packageName, MainActivity::class.java.name)
+                            )
                             if (!isInLockTaskMode()) {
                                 startLockTask()
                             }
@@ -433,6 +446,22 @@ class MainActivity : FlutterActivity() {
                 inputStream.close()
                 outputStream.close()
                 
+                // Agenda un alarm ANTES de que el proceso muera: los AlarmManager
+                // alarms los guarda el SO, no el proceso, así que sobreviven el kill.
+                // Si en 20 s el proceso no volvió solo, este alarm lo reabre.
+                val wakeIntent = Intent(this, MainActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                val wakePI = PendingIntent.getActivity(
+                    this, 9999, wakeIntent,
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+                (getSystemService(Context.ALARM_SERVICE) as AlarmManager).set(
+                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    SystemClock.elapsedRealtime() + 20_000L,
+                    wakePI
+                )
+
                 // Creamos un PendingIntent dirigido a nuestro InstallResultReceiver
                 val intent = Intent(this, InstallResultReceiver::class.java)
                 val pendingIntent = PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
