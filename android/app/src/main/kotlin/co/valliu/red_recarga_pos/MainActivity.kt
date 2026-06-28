@@ -433,9 +433,9 @@ class MainActivity : FlutterActivity() {
                 inputStream.close()
                 outputStream.close()
                 
-                // Creamos un PendingIntent para reiniciar la app al finalizar
-                val intent = Intent(this, MainActivity::class.java)
-                val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+                // Creamos un PendingIntent dirigido a nuestro InstallResultReceiver
+                val intent = Intent(this, InstallResultReceiver::class.java)
+                val pendingIntent = PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
                 session.commit(pendingIntent.intentSender)
                 session.close()
             } catch (e: Exception) {
