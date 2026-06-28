@@ -21,12 +21,17 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import android.content.pm.PackageInstaller
+import androidx.core.content.FileProvider
+import java.io.FileInputStream
+import java.io.OutputStream
 
 class MainActivity : FlutterActivity() {
 
     private val USB_STATUS_CHANNEL = "co.Juana.usb/status"
     private val PRINTER_CHANNEL    = "co.Juana.epson_printer"
     private val KIOSK_CHANNEL      = "co.Juana.kiosk"
+    private val OTA_CHANNEL        = "com.dashfleet.pos/ota"
     private val ACTION_USB_PERM    = "co.Juana.USB_PERMISSION"
 
     // Vendor ID 0x04B8 = 1208 decimal = Seiko Epson Corp.
@@ -78,6 +83,7 @@ class MainActivity : FlutterActivity() {
         setupUsbStatusChannel(flutterEngine)
         setupPrinterChannel(flutterEngine)
         setupKioskChannel(flutterEngine)
+        setupOtaChannel(flutterEngine)
     }
 
     override fun onDestroy() {
@@ -384,5 +390,75 @@ class MainActivity : FlutterActivity() {
             0x1B, 0x64.toByte(), 0x03,              // ESC d 3 — 3 saltos
             0x1D, 0x56.toByte(), 0x42.toByte(), 0x00 // GS V B 0 — corte parcial
         )
+    }
+
+    // -------------------------------------------------------------------------
+    // Channel: OTA Update (Silencioso vía Device Owner o Fallback vía Intent)
+    // -------------------------------------------------------------------------
+
+    private fun setupOtaChannel(flutterEngine: FlutterEngine) {
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, OTA_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "installApk" -> {
+                        val apkPath = call.argument<String>("apkPath")
+                        if (apkPath != null) {
+                            installApk(apkPath)
+                            result.success(true)
+                        } else {
+                            result.error("INVALID_ARG", "apkPath is null", null)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    private fun installApk(apkPath: String) {
+        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        if (dpm.isDeviceOwnerApp(packageName)) {
+            // Instalación Silenciosa Kiosco
+            try {
+                val packageInstaller = packageManager.packageInstaller
+                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+                params.setAppPackageName(packageName)
+                val sessionId = packageInstaller.createSession(params)
+                val session = packageInstaller.openSession(sessionId)
+                val apkFile = File(apkPath)
+                val inputStream = FileInputStream(apkFile)
+                val outputStream = session.openWrite("package", 0, apkFile.length())
+                
+                inputStream.copyTo(outputStream)
+                session.fsync(outputStream)
+                inputStream.close()
+                outputStream.close()
+                
+                // Creamos un PendingIntent para reiniciar la app al finalizar
+                val intent = Intent(this, MainActivity::class.java)
+                val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+                session.commit(pendingIntent.intentSender)
+                session.close()
+            } catch (e: Exception) {
+                log("Error en instalacion silenciosa: \${e.message}")
+                fallbackInstallApk(apkPath)
+            }
+        } else {
+            // Instalación manual Fallback
+            fallbackInstallApk(apkPath)
+        }
+    }
+
+    private fun fallbackInstallApk(apkPath: String) {
+        try {
+            val apkFile = File(apkPath)
+            val uri = FileProvider.getUriForFile(this, "\$packageName.fileprovider", apkFile)
+            val intent = Intent(Intent.ACTION_VIEW)
+            intent.setDataAndType(uri, "application/vnd.android.package-archive")
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            startActivity(intent)
+        } catch (e: Exception) {
+            log("Error en fallback install: \${e.message}")
+        }
     }
 }

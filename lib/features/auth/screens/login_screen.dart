@@ -43,6 +43,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _obscurePin = true;
   bool _hasUnclosedSales = false;
   String _macAddress = '';
+  String _envString = 'Cargando...';
   bool _isFirstLogin = false;
   bool _isLoadingLogin = false;
 
@@ -89,9 +90,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Future<void> _loadMacAddress() async {
     final mac = await DeviceUtils.getMacAddress();
+    final storage = ref.read(localStorageProvider);
+    final env = await storage.getEnv();
+    final version = await storage.getApkVersion();
+    
     if (mounted) {
       setState(() {
         _macAddress = mac ?? 'Desconocida';
+        if (env != null && version != null) {
+          _envString = (env.toLowerCase() == 'produccion' ? 'v' : 'v_test') + ' ' + version;
+        } else {
+          _envString = ApiConstants.displayVersion;
+        }
       });
     }
   }
@@ -1530,7 +1540,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             bottom: 16,
             left: 16,
             child: Text(
-              '${ApiConstants.displayVersion} - MAC: ${_macAddress.isEmpty ? 'Cargando...' : _macAddress}',
+              '$_envString - MAC: ${_macAddress.isEmpty ? 'Cargando...' : _macAddress}',
               style: const TextStyle(
                 color: Colors.black54,
                 fontWeight: FontWeight.bold,

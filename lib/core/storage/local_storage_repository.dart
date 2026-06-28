@@ -19,6 +19,9 @@ class LocalStorageRepository {
   static const String _deviceHashKey = 'device_hash_cache';
   static const String _activeCashierIdKey = 'active_cashier_id';
   static const String _activeCashierNameKey = 'active_cashier_name';
+  static const String _hostUrlKey = 'dynamic_host_url';
+  static const String _envKey = 'dynamic_env';
+  static const String _apkVersionKey = 'apk_version';
 
   Future<String> getDeviceHash() async {
     final prefs = await SharedPreferences.getInstance();
@@ -57,6 +60,38 @@ class LocalStorageRepository {
 
   Future<String?> getTokenValidator() async {
     return await _secureStorage.read(key: _tokenValidatorKey);
+  }
+
+  // ================= Manejo OTA y Config Dinámica =================
+
+  Future<void> saveHostUrl(String url) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_hostUrlKey, url);
+  }
+
+  Future<String?> getHostUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_hostUrlKey);
+  }
+
+  Future<void> saveEnv(String env) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_envKey, env);
+  }
+
+  Future<String?> getEnv() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_envKey);
+  }
+
+  Future<void> saveApkVersion(String version) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_apkVersionKey, version);
+  }
+
+  Future<String?> getApkVersion() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_apkVersionKey);
   }
 
   // ================= Manejo de Datos de Usuario =================

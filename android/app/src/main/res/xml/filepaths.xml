@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Define the path to the app's internal documents directory where the APK is downloaded -->
+    <files-path name="internal_files" path="." />
+    <!-- Just in case, define external storage paths -->
+    <external-path name="external_files" path="." />
+    <external-files-path name="external_files_path" path="." />
+</paths>

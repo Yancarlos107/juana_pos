@@ -1,5 +1,7 @@
+import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../main.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/storage/local_storage_repository.dart';
 import '../../auth/models/pos_location_model.dart';
@@ -10,6 +12,7 @@ import '../../auth/providers/auth_providers.dart';
 import '../../../core/database/database_helper.dart';
 import 'package:sqflite/sqflite.dart';
 import '../../../core/utils/device_utils.dart';
+import 'ota_update_service.dart';
 
 final initServiceProvider = Provider<InitService>((ref) {
   final dio = ref.watch(dioProvider);
@@ -24,12 +27,14 @@ class InitService {
   InitService(this._dio, this._storage);
 
   Future<Map<String, dynamic>> initializePOS() async {
+    String? tokenValidator;
     try {
-      final tokenValidator = await _storage.getTokenValidator();
+      tokenValidator = await _storage.getTokenValidator();
       final userToken = await _storage.getToken();
       final activeToken = tokenValidator ?? userToken;
 
-      if (activeToken == null) throw Exception('No hay token disponible para la inicialización.');
+      if (activeToken == null)
+        throw Exception('No hay token disponible para la inicialización.');
 
       final macAddress = await DeviceUtils.getMacAddress();
 
@@ -60,21 +65,30 @@ class InitService {
         final cashiersList = data['cashiers'] as List<dynamic>;
         final db = await DatabaseHelper.instance.database;
         final batch = db.batch();
-        batch.delete('users'); // Limpiamos la tabla para que no queden IDs fantasma del bug anterior
+        batch.delete(
+            'users'); // Limpiamos la tabla para que no queden IDs fantasma del bug anterior
         for (var cData in cashiersList) {
           final u = cData['user'];
           final c = cData['cashier'];
           if (u != null && c != null) {
-            batch.insert('users', {
-              'id': c['id'],
-              'email': u['phone_number'], // Usamos phone_number como login id
-              'password_hash': u['device_login_password'], // Contraseña hasheada (sha1)
-              'name': c['name'] ?? u['name'],
-              'branch_id': c['branch_id'],
-              'roles': 'Cajero', // Rol por defecto offline
-              'is_reviewer': (c['is_reviewer'] == true || c['is_reviewer'] == 1) ? 1 : 0,
-              'reviewer_code': c['reviewer_code']?.toString(),
-            }, conflictAlgorithm: ConflictAlgorithm.replace);
+            batch.insert(
+                'users',
+                {
+                  'id': c['id'],
+                  'email':
+                      u['phone_number'], // Usamos phone_number como login id
+                  'password_hash':
+                      u['device_login_password'], // Contraseña hasheada (sha1)
+                  'name': c['name'] ?? u['name'],
+                  'branch_id': c['branch_id'],
+                  'roles': 'Cajero', // Rol por defecto offline
+                  'is_reviewer':
+                      (c['is_reviewer'] == true || c['is_reviewer'] == 1)
+                          ? 1
+                          : 0,
+                  'reviewer_code': c['reviewer_code']?.toString(),
+                },
+                conflictAlgorithm: ConflictAlgorithm.replace);
           }
         }
         await batch.commit(noResult: true);
@@ -85,12 +99,14 @@ class InitService {
       if (data.containsKey('pos_locations')) {
         final locationsList = data['pos_locations'] as List<dynamic>;
         await _storage.savePosLocationsList(locationsList);
-        locations = locationsList.map((l) => PosLocationModel.fromJson(l)).toList();
+        locations =
+            locationsList.map((l) => PosLocationModel.fromJson(l)).toList();
       }
 
       // 3. Asignación automática de punto de venta (pos_assign_pos_location)
       bool autoAssignedLocation = false;
-      if (data.containsKey('pos_assign_pos_location') && data['pos_assign_pos_location'] != null) {
+      if (data.containsKey('pos_assign_pos_location') &&
+          data['pos_assign_pos_location'] != null) {
         final assignedLoc = data['pos_assign_pos_location'];
         if (assignedLoc is Map) {
           final locId = assignedLoc['id'];
@@ -104,13 +120,39 @@ class InitService {
         }
       }
 
-      // 4. Extraer token validator
+      // 4. Procesar bloque config (OTA y Token Validator)
       if (data.containsKey('config') && data['config'] != null) {
         final configData = data['config'];
-        if (configData is Map && configData.containsKey('token_validator')) {
-          final tokenVal = configData['token_validator'];
-          if (tokenVal != null) {
-            await _storage.saveTokenValidator(tokenVal.toString());
+        if (configData is Map) {
+          if (configData.containsKey('token_validator') && configData['token_validator'] != null) {
+            await _storage.saveTokenValidator(configData['token_validator'].toString());
+          }
+          
+          if (configData.containsKey('host_url') && configData['host_url'] != null) {
+            final newHostUrl = configData['host_url'].toString();
+            final oldHostUrl = await _storage.getHostUrl();
+            if (newHostUrl != oldHostUrl) {
+              await _storage.saveHostUrl(newHostUrl);
+              _dio.options.baseUrl = newHostUrl;
+            }
+          }
+          
+          if (configData.containsKey('env') && configData['env'] != null) {
+            final newEnv = configData['env'].toString();
+            final oldEnv = await _storage.getEnv();
+            if (newEnv != oldEnv) {
+              await _storage.saveEnv(newEnv);
+            }
+          }
+          
+          if (configData.containsKey('version') && configData['version'] != null && configData.containsKey('url_apk') && configData['url_apk'] != null) {
+            final newVersion = configData['version'].toString();
+            final urlApk = configData['url_apk'].toString();
+            final oldVersion = await _storage.getApkVersion() ?? ApiConstants.appVersion;
+            
+            if (newVersion != oldVersion) {
+              OtaUpdateService.triggerUpdateModal(newVersion, urlApk);
+            }
           }
         }
       }
@@ -121,19 +163,21 @@ class InitService {
         'auto_assigned_location': autoAssignedLocation,
       };
     } on DioException catch (e) {
-      if (e.type == DioExceptionType.connectionTimeout || 
-          e.type == DioExceptionType.receiveTimeout || 
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
           e.type == DioExceptionType.connectionError ||
           e.type == DioExceptionType.unknown ||
-          (e.type == DioExceptionType.badResponse && e.response?.statusCode == 302)) {
-        
+          (e.type == DioExceptionType.badResponse &&
+              e.response?.statusCode == 302)) {
         // Intento offline
         final cachedLocations = await _storage.getPosLocationsList();
         if (cachedLocations != null && cachedLocations.isNotEmpty) {
-          final locations = cachedLocations.map((l) => PosLocationModel.fromJson(l)).toList();
+          final locations =
+              cachedLocations.map((l) => PosLocationModel.fromJson(l)).toList();
           return {
             'locations': locations,
-            'novelties': [], // No importa, luego las busca con getCachedNovelties
+            'novelties':
+                [], // No importa, luego las busca con getCachedNovelties
             'auto_assigned_location': false,
           };
         }
@@ -147,13 +191,15 @@ class InitService {
       // Si no hay token u otro error genérico, intentar offline
       final cachedLocations = await _storage.getPosLocationsList();
       if (cachedLocations != null && cachedLocations.isNotEmpty) {
-        final locations = cachedLocations.map((l) => PosLocationModel.fromJson(l)).toList();
+        final locations =
+            cachedLocations.map((l) => PosLocationModel.fromJson(l)).toList();
         return {
           'locations': locations,
           'novelties': [],
         };
       }
-      throw Exception('Modo offline: No hay puntos de venta guardados en el dispositivo. Conéctate a internet e inicia sesión al menos una vez para sincronizarlos.');
+      throw Exception(
+          'Modo offline: No hay puntos de venta guardados en el dispositivo. Conéctate a internet e inicia sesión al menos una vez para sincronizarlos.');
     }
   }
 
@@ -185,11 +231,12 @@ class InitService {
         ),
       );
     } on DioException catch (e) {
-      if (e.type == DioExceptionType.connectionTimeout || 
-          e.type == DioExceptionType.receiveTimeout || 
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
           e.type == DioExceptionType.connectionError ||
           e.type == DioExceptionType.unknown ||
-          (e.type == DioExceptionType.badResponse && e.response?.statusCode == 302)) {
+          (e.type == DioExceptionType.badResponse &&
+              e.response?.statusCode == 302)) {
         // Offline: Permitimos avanzar usando el punto de venta guardado localmente
         return;
       }

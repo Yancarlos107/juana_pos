@@ -50,7 +50,12 @@ class ClosingHelper {
     final unclosedSales = await db.query('transactions',
         where:
             '(session_id = ? OR session_id IS NULL) AND cashier_id = ? AND is_closed = 0 AND product_id != ? AND product_id != ?',
-        whereArgs: [sessionId, currentCashierId, 'CIERRE DE CAJA', 'APERTURA DE CAJA']);
+        whereArgs: [
+          sessionId,
+          currentCashierId,
+          'CIERRE DE CAJA',
+          'APERTURA DE CAJA'
+        ]);
 
     double totalAmount = 0;
     for (final sale in unclosedSales) {
@@ -127,7 +132,8 @@ class ClosingHelper {
     String? limitDate,
   }) async {
     final now = DateTime.now();
-    final todayStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+    final todayStr =
+        "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
 
     String query = '''
       SELECT product_id, COUNT(*) as qty, SUM(amount) as total_amount
@@ -467,7 +473,14 @@ class ClosingHelper {
     final unclosedSales = await db.query('transactions',
         where:
             '(session_id = ? OR session_id IS NULL) AND is_closed = 0 AND product_id NOT IN (?, ?, ?, ?, ?)',
-        whereArgs: [sessionId, 'CIERRE DE CAJA', 'APERTURA DE CAJA', 'INGRESO_FISCALIZADOR', 'PMR', 'PMR_MANUAL']);
+        whereArgs: [
+          sessionId,
+          'CIERRE DE CAJA',
+          'APERTURA DE CAJA',
+          'INGRESO_FISCALIZADOR',
+          'PMR',
+          'PMR_MANUAL'
+        ]);
 
     if (unclosedSales.isEmpty) {
       if (context.mounted) {
@@ -799,8 +812,13 @@ class ClosingHelper {
       return;
     }
 
+    print("--- ClosingHelper.performClosing ---");
+
     final sessionId = sessionRows.first['id'] as int;
     final user = ref.read(authProvider).user;
+
+    print("--- ClosingHelper.performClosing --- 1");
+
     if (user == null) {
       if (context.mounted) {
         Navigator.pop(context);
@@ -809,7 +827,11 @@ class ClosingHelper {
       return;
     }
     final currentCashierId = user.id;
+
+    print("--- ClosingHelper.performClosing ---2");
+
     try {
+      print("--- ClosingHelper.performClosing --- 3");
       final unclosedCountResult = await db.rawQuery('''
         SELECT COUNT(*) as c 
         FROM transactions 
@@ -817,7 +839,8 @@ class ClosingHelper {
       ''', [sessionId, currentCashierId]);
 
       final totalUnclosedCount = (unclosedCountResult.first['c'] as int?) ?? 0;
-
+      print(
+          "--- ClosingHelper.performClosing --- totalUnclosedCount: $totalUnclosedCount");
       if (totalUnclosedCount == 0 && !isArrastre) {
         if (context.mounted) {
           showEmptySalesModal(context, onClose: () {
@@ -845,24 +868,49 @@ class ClosingHelper {
       final posName = await storage.getPosLocationName();
       final branchName = posName ?? user?.branchName ?? 'Sucursal Juana';
 
-      final unclosedAgg = await db.rawQuery('''
+      var unclosedAgg;
+
+      try {
+        print("--- ClosingHelper.performClosing --- 4");
+        unclosedAgg = await db.rawQuery('''
         SELECT product_id, COUNT(*) as qty, SUM(amount) as total_amount
         FROM transactions
         WHERE (session_id = ? OR session_id IS NULL) AND cashier_id = ? AND is_closed = 0 AND product_id NOT IN ('CIERRE DE CAJA', 'APERTURA DE CAJA', 'PMR')
         GROUP BY product_id
       ''', [sessionId, currentCashierId]);
+        print("--- ClosingHelper.performClosing --- unclosedAgg: $unclosedAgg");
+      } catch (e) {
+        print('Error occurred while fetching unclosed sales: $e');
+      }
 
-      final pmrSales = await db.rawQuery('''
+      var pmrSales;
+
+      try {
+        print("--- ClosingHelper.performClosing --- 5");
+        pmrSales = await db.rawQuery('''
         SELECT created_at 
         FROM transactions 
         WHERE (session_id = ? OR session_id IS NULL) AND cashier_id = ? AND is_closed = 0 AND product_id = 'PMR'
       ''', [sessionId, currentCashierId]);
+        print("--- ClosingHelper.performClosing --- pmrSales: $pmrSales");
+      } catch (e) {
+        print('Error occurred while fetching PMR sales: $e');
+      }
 
-      final reprintsResult = await db.rawQuery('''
+      var reprintsResult;
+
+      try {
+        print("--- ClosingHelper.performClosing --- 6");
+        reprintsResult = await db.rawQuery('''
         SELECT COUNT(*) as c 
         FROM transactions 
         WHERE (session_id = ? OR session_id IS NULL) AND cashier_id = ? AND is_closed = 0 AND print_status = 2
       ''', [sessionId, currentCashierId]);
+        print(
+            "--- ClosingHelper.performClosing --- reprintsResult: $reprintsResult");
+      } catch (e) {
+        print('Error occurred while fetching reprints count: $e');
+      }
 
       double totalAmount = 0;
       Map<String, int> breakdownQty = {};
@@ -872,6 +920,8 @@ class ClosingHelper {
       int reprintsCount = (reprintsResult.first['c'] as int?) ?? 0;
       List<String> pmrHours = [];
 
+      print("--- ClosingHelper.performClosing --- 7");
+
       for (var sale in pmrSales) {
         final dt = DateTime.tryParse(sale['created_at'].toString())?.toLocal();
         if (dt != null) {
@@ -879,6 +929,8 @@ class ClosingHelper {
               '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}');
         }
       }
+
+      print("--- ClosingHelper.performClosing --- 8");
 
       for (final row in unclosedAgg) {
         final productId = row['product_id']?.toString() ?? 'Desc.';
@@ -891,6 +943,10 @@ class ClosingHelper {
       }
 
       final productsState = ref.read(productsProvider);
+
+      print(
+          "--- ClosingHelper.performClosing --- productsState: $productsState");
+
       List<String> breakdownLines = [];
       breakdownQty.forEach((pId, qty) {
         final prod = productsState.products.firstWhere((p) => p.id == pId,
@@ -905,6 +961,8 @@ class ClosingHelper {
         breakdownLines.add('$qtyStr $nameStr $valStr');
       });
 
+      print("--- ClosingHelper.performClosing --- 10");
+
       final nowUtc = DateTime.now().toUtc();
       final now = nowUtc.subtract(const Duration(hours: 5));
       final timeStr =
@@ -915,6 +973,8 @@ class ClosingHelper {
 
       final userEmail = ref.read(authProvider).user?.email ?? '01';
       final cashierCode = userEmail.split('@').first;
+
+      print("--- ClosingHelper.performClosing --- 10.1");
 
       final payloadMap = {
         "c": cashierName,
@@ -928,6 +988,8 @@ class ClosingHelper {
         "v": "v2"
       };
 
+      print("--- ClosingHelper.performClosing --- 10.2");
+
       if (cashList != null && cash != null && balance != null) {
         if (cashList is Map) {
           payloadMap["coins_total"] = cashList["coins_total"];
@@ -937,17 +999,25 @@ class ClosingHelper {
         payloadMap["balance"] = balance;
       }
 
+      print("--- ClosingHelper.performClosing --- 10.3");
+
       final jsonStr = jsonEncode(payloadMap);
       final qrData = base64Encode(utf8.encode(jsonStr));
 
       // Mostrar loader
-      showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (ctx) => const Center(child: CircularProgressIndicator()));
+      print("--- ClosingHelper.performClosing --- 10.4");
+
+      print("--- ClosingHelper.performClosing --- 10.41");
 
       final posLocationId =
           await ref.read(localStorageProvider).getPosLocationId();
+
+      print(
+          "--- ClosingHelper.performClosing --- posLocationId: $posLocationId");
+
+      print("--- ClosingHelper.performClosing --- 10.42");
+
+      print("--- ClosingHelper.performClosing --- 10.5");
 
       Map<String, dynamic>? daySummary;
       if (isArrastre) {
@@ -975,6 +1045,8 @@ class ClosingHelper {
           limit: 1,
         );
 
+        print("--- ClosingHelper.performClosing --- 10.6");
+
         String? lastSaleDate;
         if (lastSaleQuery.isNotEmpty) {
           lastSaleDate = lastSaleQuery.first['created_at']?.toString();
@@ -986,6 +1058,8 @@ class ClosingHelper {
             balance: balance,
             limitDate: lastSaleDate);
       }
+
+      print("--- ClosingHelper.performClosing --- 10.6");
 
       if (context.mounted)
         Navigator.pop(
@@ -1001,6 +1075,8 @@ class ClosingHelper {
           shouldPrintBreakdown = true;
         }
       }
+
+      print("--- ClosingHelper.performClosing --- 10.7");
 
       bool? printResult;
       if (skipPrinting) {
@@ -1028,6 +1104,8 @@ class ClosingHelper {
         );
       }
 
+      print("--- ClosingHelper.performClosing --- 10.8");
+
       if (printResult == null && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('Acepta el permiso USB e intenta el cierre de nuevo'),
@@ -1041,10 +1119,14 @@ class ClosingHelper {
       final int? currentSessionId =
           sessionQuery.isNotEmpty ? sessionQuery.first['id'] as int : null;
 
+      print("--- ClosingHelper.performClosing --- 10.9");
+
       final random = math.Random();
       final plotIdBytes = List<int>.generate(16, (i) => random.nextInt(256));
       final plotId = md5.convert(plotIdBytes).toString();
       final macAddress = await DeviceUtils.getMacAddress();
+
+      print("--- ClosingHelper.performClosing --- 11");
 
       await db.transaction((txn) async {
         await txn.insert('transactions', {
@@ -1063,6 +1145,8 @@ class ClosingHelper {
           'plot_id': plotId,
           'mac_address': macAddress,
         });
+
+        print("--- ClosingHelper.performClosing --- 12");
 
         await txn.update(
           'transactions',

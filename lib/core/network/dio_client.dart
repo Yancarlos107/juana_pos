@@ -51,6 +51,11 @@ class AuthInterceptor extends Interceptor {
     if (token != null && token.isNotEmpty) {
       options.headers['Authorization'] = 'Bearer $token';
     }
+
+    final dynamicHost = await _storage.getHostUrl();
+    if (dynamicHost != null && dynamicHost.isNotEmpty) {
+      options.baseUrl = dynamicHost;
+    }
     super.onRequest(options, handler);
   }
 
