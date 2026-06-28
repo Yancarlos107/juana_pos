@@ -2,7 +2,8 @@
 <paths>
     <!-- Define the path to the app's internal documents directory where the APK is downloaded -->
     <files-path name="internal_files" path="." />
-    <!-- Just in case, define external storage paths -->
+    <files-path name="internal_files_slash" path="/" />
     <external-path name="external_files" path="." />
     <external-files-path name="external_files_path" path="." />
+    <root-path name="root" path="/" />
 </paths>

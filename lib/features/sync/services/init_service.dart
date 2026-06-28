@@ -123,6 +123,7 @@ class InitService {
       // 4. Procesar bloque config (OTA y Token Validator)
       if (data.containsKey('config') && data['config'] != null) {
         final configData = data['config'];
+        print('DEBUG OTA: Config completo recibido -> $configData');
         if (configData is Map) {
           if (configData.containsKey('token_validator') && configData['token_validator'] != null) {
             await _storage.saveTokenValidator(configData['token_validator'].toString());
@@ -150,8 +151,14 @@ class InitService {
             final urlApk = configData['url_apk'].toString();
             final oldVersion = await _storage.getApkVersion() ?? ApiConstants.appVersion;
             
+            print('DEBUG OTA: Backend reporta versión [$newVersion] con URL [$urlApk]');
+            print('DEBUG OTA: Versión actual instalada es [$oldVersion]');
+            
             if (newVersion != oldVersion) {
+              print('DEBUG OTA: ¡Hay actualización! Disparando OtaUpdateService...');
               OtaUpdateService.triggerUpdateModal(newVersion, urlApk);
+            } else {
+              print('DEBUG OTA: Ya estamos en la última versión, se ignora.');
             }
           }
         }

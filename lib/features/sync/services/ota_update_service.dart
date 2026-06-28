@@ -79,7 +79,7 @@ class OtaUpdateService {
   static Future<void> _downloadAndInstallApk(String version, String urlApk, Function(double) onProgress) async {
     try {
       final dio = Dio();
-      final dir = await getApplicationDocumentsDirectory();
+      final dir = await getApplicationSupportDirectory();
       final apkPath = '${dir.path}/update_$version.apk';
       
       final file = File(apkPath);

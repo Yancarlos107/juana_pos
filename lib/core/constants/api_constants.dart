@@ -1,4 +1,5 @@
 class ApiConstants {
+  // Cambio rápido entre entornos
   static const bool isProduction = true;
 
   static const String baseUrlProd = 'http://35.208.37.141:8089/api';

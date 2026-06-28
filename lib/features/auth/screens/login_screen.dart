@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../main.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
@@ -95,12 +96,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final storage = ref.read(localStorageProvider);
     final env = await storage.getEnv();
     final version = await storage.getApkVersion();
-    
+
     if (mounted) {
       setState(() {
         _macAddress = mac ?? 'Desconocida';
         if (env != null && version != null) {
-          _envString = (env.toLowerCase() == 'produccion' ? 'v' : 'v_test') + ' ' + version;
+          _envString = (env.toLowerCase() == 'produccion' ? 'v' : 'v_test') +
+              ' ' +
+              version;
         } else {
           _envString = ApiConstants.displayVersion;
         }
@@ -281,74 +284,73 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     try {
       // Limpiar cualquier estado residual de fiscalizador ANTES de iniciar sesión con un usuario normal
-    ref.read(reviewerNameProvider.notifier).state = null;
+      ref.read(reviewerNameProvider.notifier).state = null;
 
-    if (_isFirstLogin) {
-      await ref.read(authProvider.notifier).login(
-            _emailController.text.trim(),
-            _pinController.text.trim(),
-          );
-      
-      final authResult = ref.read(authProvider);
-      if (mounted && authResult.status == AuthStatus.authenticated) {
-        await ref.read(localStorageProvider).setFirstLoginCompleted();
-      }
-    } else {
-      final pin = _pinController.text.trim();
-      final db = await DatabaseHelper.instance.database;
-      final pinHash = sha1.convert(utf8.encode(pin)).toString();
+      if (_isFirstLogin) {
+        await ref.read(authProvider.notifier).login(
+              _emailController.text.trim(),
+              _pinController.text.trim(),
+            );
 
-      final results = await db.query('users',
-          where: 'password_hash = ?', whereArgs: [pinHash], limit: 1);
-
-      if (results.isEmpty) {
-        _showErrorSnackBar('PIN incorrecto o no autorizado');
-        _pinController.clear();
-        _pinFocusNode.requestFocus();
-        return;
-      }
-
-      final email = results.first['email']?.toString() ?? '01';
-
-      await ref.read(authProvider.notifier).login(email, pin);
-    }
-
-    final authState = ref.read(authProvider);
-    // Si llegamos aquí sin excepción, solicitamos el Punto de Venta
-    if (mounted && authState.status == AuthStatus.authenticated) {
-      // 1. (Eliminado: Petición directa al servidor RC171 para evitar duplicidad, ahora se encola abajo)
-
-      // 2. Capturar y guardar GPS (Solo se pide una vez al iniciar sesión)
-      try {
-        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-        if (serviceEnabled) {
-          LocationPermission permission = await Geolocator.checkPermission();
-          if (permission == LocationPermission.denied) {
-            permission = await Geolocator.requestPermission();
-          }
-          if (permission == LocationPermission.whileInUse ||
-              permission == LocationPermission.always) {
-            Position position = await Geolocator.getCurrentPosition(
-                desiredAccuracy: LocationAccuracy.medium);
-            await ref
-                .read(localStorageProvider)
-                .saveGpsLocation(position.latitude, position.longitude);
-            print(
-                'DEBUG: GPS capturado en login: ${position.latitude}, ${position.longitude}');
-          }
+        final authResult = ref.read(authProvider);
+        if (mounted && authResult.status == AuthStatus.authenticated) {
+          await ref.read(localStorageProvider).setFirstLoginCompleted();
         }
-      } catch (e) {
-        print('DEBUG: Error capturando GPS en login: $e');
+      } else {
+        final pin = _pinController.text.trim();
+        final db = await DatabaseHelper.instance.database;
+        final pinHash = sha1.convert(utf8.encode(pin)).toString();
+
+        final results = await db.query('users',
+            where: 'password_hash = ?', whereArgs: [pinHash], limit: 1);
+
+        if (results.isEmpty) {
+          _showErrorSnackBar('PIN incorrecto o no autorizado');
+          _pinController.clear();
+          _pinFocusNode.requestFocus();
+          return;
+        }
+
+        final email = results.first['email']?.toString() ?? '01';
+
+        await ref.read(authProvider.notifier).login(email, pin);
       }
 
-      // 3. Pedimos punto de venta (UI)
-      final success = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => const LocationSelectionDialog(),
-      );
+      final authState = ref.read(authProvider);
+      // Si llegamos aquí sin excepción, solicitamos el Punto de Venta
+      if (authState.status == AuthStatus.authenticated) {
+        // 1. (Eliminado: Petición directa al servidor RC171 para evitar duplicidad, ahora se encola abajo)
 
-      if (mounted) {
+        // 2. Capturar y guardar GPS (Solo se pide una vez al iniciar sesión)
+        try {
+          bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+          if (serviceEnabled) {
+            LocationPermission permission = await Geolocator.checkPermission();
+            if (permission == LocationPermission.denied) {
+              permission = await Geolocator.requestPermission();
+            }
+            if (permission == LocationPermission.whileInUse ||
+                permission == LocationPermission.always) {
+              Position position = await Geolocator.getCurrentPosition(
+                  desiredAccuracy: LocationAccuracy.medium);
+              await ref
+                  .read(localStorageProvider)
+                  .saveGpsLocation(position.latitude, position.longitude);
+              print(
+                  'DEBUG: GPS capturado en login: ${position.latitude}, ${position.longitude}');
+            }
+          }
+        } catch (e) {
+          print('DEBUG: Error capturando GPS en login: $e');
+        }
+
+        // 3. Pedimos punto de venta (UI)
+        final success = await showDialog<bool>(
+          context: navigatorKey.currentContext ?? context,
+          barrierDismissible: false,
+          builder: (_) => const LocationSelectionDialog(),
+        );
+
         if (success == true) {
           if (_isFirstLogin) {
             // Aseguramiento del PIN en SQLite para evitar que la inicialización lo borre o corrompa el hash
@@ -414,47 +416,48 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   'open-${DateTime.now().microsecondsSinceEpoch}-$posLocationId',
               'session_id': null,
               'cashier_id': cashierId,
-              'pos_location_id': posLocationId,
-              'product_id': 'APERTURA DE CAJA',
-              'amount': 0.0,
-              'pmr': 0,
-              'status': 'pending',
-              'created_at': DateTime.now().toIso8601String(),
-              'qr_data': '', // Token vacío
-              'print_status': 0,
-              'lat': gpsData?['lat'],
-              'lon': gpsData?['lon'],
-              'plot_id': plotId,
-            });
-            print(
-                'DEBUG: Transacción de APERTURA DE CAJA guardada localmente para desencole (RC174).');
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Caja abierta offline exitosamente (RC174)'),
-                  backgroundColor: Colors.green,
-                ),
-              );
+                'pos_location_id': posLocationId,
+                'product_id': 'APERTURA DE CAJA',
+                'amount': 0.0,
+                'pmr': 0,
+                'status': 'pending',
+                'created_at': DateTime.now().toIso8601String(),
+                'qr_data': '', // Token vacío
+                'print_status': 0,
+                'lat': gpsData?['lat'],
+                'lon': gpsData?['lon'],
+                'plot_id': plotId,
+              });
+              print(
+                  'DEBUG: Transacción de APERTURA DE CAJA guardada localmente para desencole (RC174).');
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Caja abierta offline exitosamente (RC174)'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            } catch (e) {
+              print('DEBUG: Error al guardar APERTURA DE CAJA: $e');
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error guardando RC174: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
             }
-          } catch (e) {
-            print('DEBUG: Error al guardar APERTURA DE CAJA: $e');
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Error guardando RC174: $e'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          }
 
-          Navigator.pushReplacementNamed(context, '/dashboard');
-        } else {
-          // Si el usuario cancela, cerramos la sesión parcial
-          await ref.read(authProvider.notifier).logout(ref);
-        }
+            if (navigatorKey.currentContext != null) {
+              Navigator.pushReplacementNamed(navigatorKey.currentContext!, '/dashboard');
+            }
+          } else {
+            // Si el usuario cancela, cerramos la sesión parcial
+            await ref.read(authProvider.notifier).logout(ref);
+          }
       }
-    }
     } finally {
       if (mounted) setState(() => _isLoadingLogin = false);
     }
@@ -676,7 +679,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               createdAt?.toString();
         }
 
-        final todayStr = "${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().day.toString().padLeft(2, '0')}";
+        final todayStr =
+            "${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().day.toString().padLeft(2, '0')}";
         final allSales = await db.query('transactions',
             where:
                 'created_at LIKE ? AND product_id != ? AND product_id != ? AND product_id != ? AND created_at <= ?',
@@ -939,12 +943,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               onTap: () async {
                 Navigator.pop(ctx);
                 final db = await DatabaseHelper.instance.database;
-                
+
                 final lastSaleQuery = await db.query('transactions',
                     where: 'session_id IS NOT NULL',
                     orderBy: 'created_at DESC',
                     limit: 1);
-                    
+
                 if (lastSaleQuery.isNotEmpty) {
                   final sessionId = lastSaleQuery.first['session_id'] as int;
                   int count = await db.rawUpdate('''
@@ -952,17 +956,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     SET session_id = ? 
                     WHERE session_id IS NULL AND is_closed = 0
                   ''', [sessionId]);
-                  
+
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text('Se vincularon $count ventas a la última sesión ($sessionId)'),
+                      content: Text(
+                          'Se vincularon $count ventas a la última sesión ($sessionId)'),
                       backgroundColor: Colors.green,
                     ));
                   }
                 } else {
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                      content: Text('No hay historial de sesiones para vincular las ventas'),
+                      content: Text(
+                          'No hay historial de sesiones para vincular las ventas'),
                       backgroundColor: Colors.orange,
                     ));
                   }
@@ -1172,7 +1178,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             physics: const NeverScrollableScrollPhysics(),
             children: [
               for (var i = 1; i <= 9; i++) _buildNumButton(i.toString()),
-              _buildNumButton('C', color: Colors.redAccent),
+              _buildNumButton('Co', color: Colors.redAccent),
               _buildNumButton('0'),
               _buildNumButton('⌫', icon: Icons.backspace_outlined),
             ],
@@ -1393,7 +1399,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final systemStatus = ref.watch(systemStatusProvider);
 
     final scaffoldContent = Scaffold(
-          backgroundColor: Colors.white,
+      backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,

@@ -458,7 +458,7 @@ class MainActivity : FlutterActivity() {
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             startActivity(intent)
         } catch (e: Exception) {
-            log("Error en fallback install: \${e.message}")
+            log("Error en fallback install: ${e.message}")
         }
     }
 }

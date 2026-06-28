@@ -54,8 +54,14 @@ class AuthInterceptor extends Interceptor {
 
     final dynamicHost = await _storage.getHostUrl();
     if (dynamicHost != null && dynamicHost.isNotEmpty) {
-      options.baseUrl = dynamicHost;
+      if (!dynamicHost.endsWith('/api') && !dynamicHost.endsWith('/api/')) {
+        options.baseUrl = dynamicHost.endsWith('/') ? '${dynamicHost}api' : '$dynamicHost/api';
+      } else {
+        options.baseUrl = dynamicHost;
+      }
     }
+    
+    print('DEBUG: URL resuelta HTTP -> ${options.uri.toString()} (BaseUrl configurada: ${options.baseUrl})');
     super.onRequest(options, handler);
   }
 

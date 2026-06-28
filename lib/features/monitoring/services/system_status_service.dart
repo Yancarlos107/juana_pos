@@ -9,13 +9,16 @@ import '../models/system_status.dart';
 import '../../sync/services/background_sync_service.dart';
 import '../../printer/services/printer_service.dart';
 import '../../sync/services/init_service.dart';
+import '../../../core/storage/local_storage_repository.dart';
+import '../../sync/services/database_maintenance_service.dart';
 
 final systemStatusProvider = StateNotifierProvider<SystemStatusNotifier, SystemStatus>((ref) {
   final dio = ref.watch(dioProvider);
   final syncService = ref.watch(backgroundSyncProvider);
   final printerService = ref.watch(printerServiceProvider);
   final initService = ref.watch(initServiceProvider);
-  return SystemStatusNotifier(dio, syncService, printerService, initService);
+  final storage = ref.watch(localStorageProvider);
+  return SystemStatusNotifier(dio, syncService, printerService, initService, storage);
 });
 
 class SystemStatusNotifier extends StateNotifier<SystemStatus> {
@@ -23,10 +26,11 @@ class SystemStatusNotifier extends StateNotifier<SystemStatus> {
   final BackgroundSyncService _syncService;
   final PrinterService _printerService;
   final InitService _initService;
+  final LocalStorageRepository _storage;
   Timer? _timer;
   DateTime? _lastConfigSync;
 
-  SystemStatusNotifier(this._dio, this._syncService, this._printerService, this._initService) : super(SystemStatus()) {
+  SystemStatusNotifier(this._dio, this._syncService, this._printerService, this._initService, this._storage) : super(SystemStatus()) {
     _initMonitoring();
   }
 
