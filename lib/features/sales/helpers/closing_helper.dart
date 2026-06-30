@@ -1208,6 +1208,7 @@ class ClosingHelper {
     final closeLoader = _showSafeLoader(navContext);
 
     try {
+      try {
       await ref
           .read(backgroundSyncProvider)
           .syncPendingData()
