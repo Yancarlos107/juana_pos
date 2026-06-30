@@ -156,7 +156,7 @@ class _CashCountScreenState extends ConsumerState<CashCountScreen> {
     ); // showDialog
     } catch (e) {
       if (context.mounted) {
-        Navigator.pop(context); // Cierra el indicador si hay error
+        // Se remueve Navigator.pop(context) global para evitar doble pop y pantalla negra
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error al preparar cierre: $e'),
