@@ -19,6 +19,22 @@ import '../../sync/services/background_sync_service.dart';
 import '../../../core/utils/print_log_helper.dart';
 
 class ClosingHelper {
+  static VoidCallback _showSafeLoader(BuildContext context) {
+    bool isClosed = false;
+    final nav = Navigator.of(context, rootNavigator: true);
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+          child: CircularProgressIndicator(color: Color(0xFF6642F8))),
+    );
+    return () {
+      if (!isClosed) {
+        isClosed = true;
+        nav.pop();
+      }
+    };
+  }
   static String formatCurrency(double value) {
     final hasDecimals = value % 1 != 0;
     if (hasDecimals) {
@@ -194,12 +210,7 @@ class ClosingHelper {
 
   static Future<void> printArqueoTicket(
       BuildContext context, WidgetRef ref) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(
-          child: CircularProgressIndicator(color: Color(0xFF6642F8))),
-    );
+    final closeLoader = _showSafeLoader(context);
 
     try {
       final db = await DatabaseHelper.instance.database;
@@ -209,16 +220,18 @@ class ClosingHelper {
       final sessionQuery = await db.query('sessions',
           where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
       if (sessionQuery.isEmpty) {
-        if (context.mounted) Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No hay sesión abierta.')));
+        closeLoader();
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('No hay sesión abierta.')));
+        }
         return;
       }
 
       final user = ref.read(authProvider).user;
       if (user == null) {
+        closeLoader();
         if (context.mounted) {
-          Navigator.pop(context);
           Navigator.pushReplacementNamed(context, '/login');
         }
         return;
@@ -234,8 +247,8 @@ class ClosingHelper {
       final totalUnclosedCount = (unclosedCountResult.first['c'] as int?) ?? 0;
 
       if (totalUnclosedCount == 0) {
+        closeLoader();
         if (context.mounted) {
-          Navigator.pop(context); // Cerrar loader
           showEmptySalesModal(context);
         }
         return;
@@ -273,9 +286,8 @@ class ClosingHelper {
 
       final cashierName = ref.read(authProvider).user?.name ?? 'Operador';
       final reviewerName = ref.read(reviewerNameProvider);
-      if (context.mounted)
-        Navigator.pop(
-            context); // Cerrar loader ANTES del diálogo de confirmación
+      
+      closeLoader();
 
       if (!context.mounted) return;
 
@@ -356,21 +368,20 @@ class ClosingHelper {
 
       if (confirmed != true) return;
 
+      VoidCallback? closeSecondLoader;
       if (context.mounted) {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => const Center(
-              child: CircularProgressIndicator(color: Color(0xFF6642F8))),
-        );
+        closeSecondLoader = _showSafeLoader(context);
       }
 
       final isPrinterConnected =
           await ref.read(systemStatusProvider.notifier).checkPrinterNow();
       if (!isPrinterConnected) {
-        if (context.mounted) Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Impresora no conectada.')));
+        closeSecondLoader?.call();
+        closeSecondLoader = null;
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Impresora no conectada.')));
+        }
         return;
       }
 
@@ -404,8 +415,8 @@ class ClosingHelper {
             limitDate: lastSaleDate);
       }
 
-      if (context.mounted)
-        Navigator.pop(context); // Cerrar loader antes de imprimir
+      closeSecondLoader?.call();
+      closeSecondLoader = null;
 
       final printResult =
           await ref.read(printerServiceProvider).printArqueoTicket(
@@ -430,7 +441,6 @@ class ClosingHelper {
           ?.pushNamedAndRemoveUntil('/dashboard', (route) => false);
     } catch (e) {
       if (context.mounted) {
-        Navigator.pop(context);
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Error: $e')));
       }
@@ -440,34 +450,30 @@ class ClosingHelper {
   static Future<void> showClosingConfirmation(
       BuildContext context, WidgetRef ref,
       {bool isLogout = false}) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(
-          child: CircularProgressIndicator(color: Color(0xFF6642F8))),
-    );
+    final closeLoader = _showSafeLoader(context);
 
-    final db = await DatabaseHelper.instance.database;
-    final storage = ref.read(localStorageProvider);
-    final branchId = await storage.getBranchId() ?? 0;
+    try {
+      final db = await DatabaseHelper.instance.database;
+      final storage = ref.read(localStorageProvider);
+      final branchId = await storage.getBranchId() ?? 0;
 
-    final sessionQuery = await db.query('sessions',
-        where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
+      final sessionQuery = await db.query('sessions',
+          where: 'status = ? AND branch_id = ?', whereArgs: ['open', branchId]);
 
-    if (context.mounted) Navigator.pop(context); // Cerrar loader
-
-    if (sessionQuery.isEmpty) {
-      if (isLogout) {
-        _executeLogout(context, ref);
+      if (sessionQuery.isEmpty) {
+        closeLoader();
+        if (isLogout) {
+          _executeLogout(context, ref);
+        }
+        return;
       }
-      return;
-    }
 
-    final user = ref.read(authProvider).user;
-    if (user == null) {
-      if (context.mounted) Navigator.pushReplacementNamed(context, '/login');
-      return;
-    }
+      final user = ref.read(authProvider).user;
+      if (user == null) {
+        closeLoader();
+        if (context.mounted) Navigator.pushReplacementNamed(context, '/login');
+        return;
+      }
     final currentCashierId = user.id;
     final sessionId = sessionQuery.first['id'] as int;
     final unclosedSales = await db.query('transactions',
@@ -482,16 +488,17 @@ class ClosingHelper {
           'PMR_MANUAL'
         ]);
 
-    if (unclosedSales.isEmpty) {
-      if (context.mounted) {
-        showEmptySalesModal(context, onClose: () {
-          if (isLogout && context.mounted) {
-            Navigator.pop(context); // Cierra modal previo o pantalla si aplica
-          }
-        });
+      if (unclosedSales.isEmpty) {
+        closeLoader();
+        if (context.mounted) {
+          showEmptySalesModal(context, onClose: () {
+            if (isLogout && context.mounted) {
+              Navigator.pop(context); // Cierra modal previo o pantalla si aplica
+            }
+          });
+        }
+        return;
       }
-      return;
-    }
 
     double totalAmount = 0;
     Map<String, int> breakdownQty = {};
@@ -530,9 +537,11 @@ class ClosingHelper {
           ],
         ),
       ));
-    });
+      });
 
-    showDialog(
+      closeLoader();
+
+      showDialog(
       context: context,
       builder: (ctx) {
         bool isArrastre = false;
@@ -672,20 +681,14 @@ class ClosingHelper {
                   onPressed: () async {
                     Navigator.pop(ctx);
 
-                    showDialog(
-                      context: context,
-                      barrierDismissible: false,
-                      builder: (_) => const Center(
-                          child: CircularProgressIndicator(
-                              color: Color(0xFF6642F8))),
-                    );
+                    final closeInnerLoader = _showSafeLoader(context);
 
-                    final isPrinterConnected = await ref
-                        .read(systemStatusProvider.notifier)
-                        .checkPrinterNow();
+                    try {
+                      final isPrinterConnected = await ref
+                          .read(systemStatusProvider.notifier)
+                          .checkPrinterNow();
 
-                    if (context.mounted)
-                      Navigator.pop(context); // Cerrar loading
+                      closeInnerLoader();
 
                     if (!isPrinterConnected) {
                       final proceed = await _showPrinterWarningDialog(context);
@@ -695,6 +698,12 @@ class ClosingHelper {
                     performClosing(context, ref, isLogout,
                         isArrastre: isArrastre,
                         skipPrinting: !isPrinterConnected);
+                    } catch (e) {
+                      closeInnerLoader();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                      }
+                    }
                   },
                   icon: const Icon(Icons.print_rounded, size: 20),
                   label: Text(isLogout ? 'CERRAR E IMPRIMIR' : 'CONFIRMAR',
@@ -716,6 +725,12 @@ class ClosingHelper {
         ); // StatefulBuilder
       },
     ); // showDialog
+    } catch (e) {
+      closeLoader();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    }
   }
 
   static Future<bool> _showPrinterWarningDialog(BuildContext context) async {
@@ -768,29 +783,29 @@ class ClosingHelper {
   static Future<void> performArqueoClosing(BuildContext context, WidgetRef ref,
       dynamic cashList, double totalCash, double balance,
       {bool isLogout = false, bool isArrastre = false}) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(
-          child: CircularProgressIndicator(color: Color(0xFF6642F8))),
-    );
+    final closeLoader = _showSafeLoader(context);
 
-    final isPrinterConnected =
-        await ref.read(systemStatusProvider.notifier).checkPrinterNow();
+    try {
+      final isPrinterConnected =
+          await ref.read(systemStatusProvider.notifier).checkPrinterNow();
 
-    if (context.mounted) Navigator.pop(context); // Cerrar loading
+      closeLoader();
 
     if (!isPrinterConnected) {
       final proceed = await _showPrinterWarningDialog(context);
       if (!proceed) return;
     }
 
-    performClosing(context, ref, isLogout,
-        cashList: cashList,
-        cash: totalCash,
-        balance: balance,
-        isArrastre: isArrastre,
-        skipPrinting: !isPrinterConnected);
+      performClosing(context, ref, isLogout,
+          cashList: cashList,
+          cash: totalCash,
+          balance: balance,
+          isArrastre: isArrastre,
+          skipPrinting: !isPrinterConnected);
+    } catch (e) {
+      closeLoader();
+      rethrow;
+    }
   }
 
   static Future<void> performClosing(
@@ -1190,10 +1205,7 @@ class ClosingHelper {
     final navContext = navigatorKey.currentContext ?? context;
     if (!navContext.mounted) return;
 
-    showDialog(
-        context: navContext,
-        barrierDismissible: false,
-        builder: (ctx) => const Center(child: CircularProgressIndicator()));
+    final closeLoader = _showSafeLoader(navContext);
 
     try {
       await ref
@@ -1202,11 +1214,15 @@ class ClosingHelper {
           .timeout(const Duration(seconds: 3));
     } catch (_) {}
 
-    ref.read(reviewerNameProvider.notifier).state = null;
-    await ref.read(authProvider.notifier).logout(ref);
+      ref.read(reviewerNameProvider.notifier).state = null;
+      await ref.read(authProvider.notifier).logout(ref);
 
-    navigatorKey.currentState?.pop(); // close loader
-    navigatorKey.currentState
-        ?.pushNamedAndRemoveUntil('/login', (route) => false);
+      closeLoader();
+      navigatorKey.currentState
+          ?.pushNamedAndRemoveUntil('/login', (route) => false);
+    } catch (e) {
+      closeLoader();
+      rethrow;
+    }
   }
 }
