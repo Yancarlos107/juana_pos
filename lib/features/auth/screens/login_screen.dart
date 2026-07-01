@@ -327,7 +327,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           if (permission == LocationPermission.whileInUse ||
               permission == LocationPermission.always) {
             Position position = await Geolocator.getCurrentPosition(
-                desiredAccuracy: LocationAccuracy.medium);
+                desiredAccuracy: LocationAccuracy.medium,
+                timeLimit: const Duration(seconds: 5),
+            );
             await ref
                 .read(localStorageProvider)
                 .saveGpsLocation(position.latitude, position.longitude);

@@ -129,7 +129,14 @@ class InitService {
           }
           
           if (configData.containsKey('host_url') && configData['host_url'] != null) {
-            final newHostUrl = configData['host_url'].toString();
+            String newHostUrl = configData['host_url'].toString().trim();
+            if (!newHostUrl.endsWith('/api')) {
+              if (newHostUrl.endsWith('/')) {
+                newHostUrl = '${newHostUrl}api';
+              } else {
+                newHostUrl = '$newHostUrl/api';
+              }
+            }
             final oldHostUrl = await _storage.getHostUrl();
             if (newHostUrl != oldHostUrl) {
               await _storage.saveHostUrl(newHostUrl);

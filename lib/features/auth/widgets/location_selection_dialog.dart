@@ -119,12 +119,30 @@ class _LocationSelectionDialogState extends ConsumerState<LocationSelectionDialo
                   color: Colors.red.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text(
-                  _errorMessage!.contains('offline_no_cache')
-                      ? 'Error al descargar datos iniciales. Por favor, cierra la aplicación, verifica tu conexión a internet y vuelve a intentarlo.'
-                      : 'Error al sincronizar:\n$_errorMessage',
-                  style: const TextStyle(color: Colors.red),
-                  textAlign: TextAlign.center,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _errorMessage!.contains('offline_no_cache')
+                          ? 'Error al descargar datos iniciales. Por favor, cierra la aplicación, verifica tu conexión a internet y vuelve a intentarlo.'
+                          : 'Error al sincronizar:\n$_errorMessage',
+                      style: const TextStyle(color: Colors.red),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () {
+                        if (mounted) {
+                          Navigator.of(context).pop(false);
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('CERRAR', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ],
                 ),
               )
             else if (_locations.isEmpty)
