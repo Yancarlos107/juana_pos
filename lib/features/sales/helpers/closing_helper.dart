@@ -493,7 +493,7 @@ class ClosingHelper {
         if (context.mounted) {
           showEmptySalesModal(context, onClose: () {
             if (isLogout && context.mounted) {
-              Navigator.pop(context); // Cierra modal previo o pantalla si aplica
+              _executeLogout(context, ref);
             }
           });
         }
@@ -796,7 +796,7 @@ class ClosingHelper {
       if (!proceed) return;
     }
 
-      performClosing(context, ref, isLogout,
+      await performClosing(context, ref, isLogout,
           cashList: cashList,
           cash: totalCash,
           balance: balance,
@@ -836,7 +836,6 @@ class ClosingHelper {
 
     if (user == null) {
       if (context.mounted) {
-        Navigator.pop(context);
         Navigator.pushReplacementNamed(context, '/login');
       }
       return;
@@ -1075,10 +1074,6 @@ class ClosingHelper {
       }
 
       print("--- ClosingHelper.performClosing --- 10.6");
-
-      if (context.mounted)
-        Navigator.pop(
-            context); // Quitar loader ANTES de imprimir para evitar deadlock de UI
 
       final isFiscalizador = ref.read(reviewerNameProvider) != null;
       bool shouldPrintBreakdown = false;
