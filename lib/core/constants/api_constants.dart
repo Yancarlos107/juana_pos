@@ -1,4 +1,5 @@
 class ApiConstants {
+  // Cambio rápido entre entornos
   static const bool isProduction = true;
 
   static const String baseUrlProd = 'http://35.208.37.141:8089/api';
@@ -7,7 +8,7 @@ class ApiConstants {
   static const String baseUrl = isProduction ? baseUrlProd : baseUrlDev;
 
   // Versión de la aplicación
-  static const String appVersion = '1.8.4';
+  static const String appVersion = '1.10.6';
   static String get displayVersion =>
       isProduction ? 'v$appVersion' : 'v_test $appVersion';
 

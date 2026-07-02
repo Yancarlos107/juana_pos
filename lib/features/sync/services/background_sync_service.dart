@@ -37,8 +37,6 @@ class BackgroundSyncService {
     // Prevenir sincronización prematura durante el login (antes de seleccionar el Punto de Venta)
     final posLocationId = await _storage.getPosLocationId();
     if (posLocationId == null) {
-      print(
-          'DEBUG: Abortando sync - Aún no se ha seleccionado Punto de Venta.');
       return;
     }
 

@@ -22,6 +22,7 @@ class LocalStorageRepository {
   static const String _hostUrlKey = 'dynamic_host_url';
   static const String _envKey = 'dynamic_env';
   static const String _apkVersionKey = 'apk_version';
+  static const String _lastDbCleanupDateKey = 'last_db_cleanup_date';
 
   Future<String> getDeviceHash() async {
     final prefs = await SharedPreferences.getInstance();
@@ -262,5 +263,21 @@ class LocalStorageRepository {
   Future<void> clearLocalSales() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_salesKey);
+  }
+
+  // ================= Mantenimiento Base de Datos =================
+
+  Future<void> saveLastDbCleanupDate(DateTime date) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_lastDbCleanupDateKey, date.toIso8601String());
+  }
+
+  Future<DateTime?> getLastDbCleanupDate() async {
+    final prefs = await SharedPreferences.getInstance();
+    final dateStr = prefs.getString(_lastDbCleanupDateKey);
+    if (dateStr != null) {
+      return DateTime.tryParse(dateStr);
+    }
+    return null;
   }
 }

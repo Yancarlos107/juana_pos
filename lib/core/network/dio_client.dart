@@ -64,10 +64,10 @@ class AuthInterceptor extends Interceptor {
       }
       options.baseUrl = dynamicHost;
     }
-    
+
     // DEBUG: Imprimir la petición completa resuelta por Dio
     print('DEBUG DIO REQ: [${options.method}] ${options.uri.toString()}');
-    
+
     super.onRequest(options, handler);
   }
 
