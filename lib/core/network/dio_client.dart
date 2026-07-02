@@ -52,15 +52,31 @@ class AuthInterceptor extends Interceptor {
       options.headers['Authorization'] = 'Bearer $token';
     }
 
-    final dynamicHost = await _storage.getHostUrl();
+    String? dynamicHost = await _storage.getHostUrl();
     if (dynamicHost != null && dynamicHost.isNotEmpty) {
+      dynamicHost = dynamicHost.trim();
+      if (!dynamicHost.endsWith('/api')) {
+        if (dynamicHost.endsWith('/')) {
+          dynamicHost = '${dynamicHost}api';
+        } else {
+          dynamicHost = '$dynamicHost/api';
+        }
+      }
       options.baseUrl = dynamicHost;
     }
+    
+    // DEBUG: Imprimir la petición completa resuelta por Dio
+    print('DEBUG DIO REQ: [${options.method}] ${options.uri.toString()}');
+    
     super.onRequest(options, handler);
   }
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
+    print('DEBUG DIO ERROR: [${err.requestOptions.method}] ${err.requestOptions.uri.toString()}');
+    print('DEBUG DIO ERROR STATUS: ${err.response?.statusCode}');
+    print('DEBUG DIO ERROR DATA: ${err.response?.data}');
+    
     if (err.response?.statusCode == 401) {
       // TODO: Propagar evento para forzar Logout
     }
