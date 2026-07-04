@@ -95,15 +95,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final mac = await DeviceUtils.getMacAddress();
     final storage = ref.read(localStorageProvider);
     final env = await storage.getEnv();
-    final version = await storage.getApkVersion();
 
     if (mounted) {
       setState(() {
         _macAddress = mac ?? 'Desconocida';
-        if (env != null && version != null) {
-          _envString = (env.toLowerCase() == 'produccion' ? 'v' : 'v_test') +
-              ' ' +
-              version;
+        if (env != null && env.toLowerCase() != 'produccion') {
+          _envString = 'v_test ${ApiConstants.appVersion}';
         } else {
           _envString = ApiConstants.displayVersion;
         }

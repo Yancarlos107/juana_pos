@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/storage/local_storage_repository.dart';
 import '../../../core/network/dio_client.dart';
 import '../../sync/services/init_service.dart';
+import '../../sync/services/ota_update_service.dart';
 import '../models/pos_location_model.dart';
 import '../providers/auth_providers.dart';
 
@@ -17,6 +18,7 @@ class _LocationSelectionDialogState extends ConsumerState<LocationSelectionDialo
   bool _isLoading = true;
   List<PosLocationModel> _locations = [];
   String? _errorMessage;
+  Map<String, dynamic>? _otaData;
 
   @override
   void initState() {
@@ -24,10 +26,27 @@ class _LocationSelectionDialogState extends ConsumerState<LocationSelectionDialo
     _loadLocations();
   }
 
+  @override
+  void dispose() {
+    if (_otaData != null) {
+      Future.delayed(const Duration(milliseconds: 1000), () {
+        OtaUpdateService.triggerUpdateModal(_otaData!['new_version'], _otaData!['url_apk']);
+      });
+    }
+    super.dispose();
+  }
+
   Future<void> _loadLocations() async {
     try {
       final initService = ref.read(initServiceProvider);
-      final data = await initService.initializePOS();
+      final data = await initService.initializePOS(silentOta: true);
+
+      if (data['has_update'] == true) {
+        _otaData = {
+          'new_version': data['new_version'],
+          'url_apk': data['url_apk'],
+        };
+      }
 
       // Si el servidor nos asignó automáticamente una ubicación, no hace falta que el usuario escoja
       if (data['auto_assigned_location'] == true) {

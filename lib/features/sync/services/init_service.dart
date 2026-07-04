@@ -26,15 +26,23 @@ class InitService {
 
   InitService(this._dio, this._storage);
 
-  Future<Map<String, dynamic>> initializePOS() async {
+  Future<Map<String, dynamic>> initializePOS({bool silentOta = false}) async {
     String? tokenValidator;
     try {
       tokenValidator = await _storage.getTokenValidator();
       final userToken = await _storage.getToken();
+      
+      print('DEBUG INIT: tokenValidator existe? ${tokenValidator != null}');
+      print('DEBUG INIT: userToken existe? ${userToken != null}');
+      
       final activeToken = tokenValidator ?? userToken;
 
-      if (activeToken == null)
+      if (activeToken == null) {
+        print('DEBUG INIT: Fallo - No hay ningún token disponible.');
         throw Exception('No hay token disponible para la inicialización.');
+      }
+      
+      print('DEBUG INIT: Usando token -> ${tokenValidator != null ? "TOKEN_VALIDATOR (Dispositivo)" : "USER_TOKEN (Cajero)"}');
 
       final macAddress = await DeviceUtils.getMacAddress();
 
@@ -156,16 +164,27 @@ class InitService {
           if (configData.containsKey('version') && configData['version'] != null && configData.containsKey('url_apk') && configData['url_apk'] != null) {
             final newVersion = configData['version'].toString();
             final urlApk = configData['url_apk'].toString();
-            final oldVersion = await _storage.getApkVersion() ?? ApiConstants.appVersion;
+            final oldVersion = ApiConstants.appVersion;
             
             print('DEBUG OTA: Backend reporta versión [$newVersion] con URL [$urlApk]');
-            print('DEBUG OTA: Versión actual instalada es [$oldVersion]');
+            print('DEBUG OTA: Versión actual instalada (real) es [$oldVersion]');
             
             if (newVersion != oldVersion) {
-              print('DEBUG OTA: ¡Hay actualización! Disparando OtaUpdateService...');
-              OtaUpdateService.triggerUpdateModal(newVersion, urlApk);
+              print('DEBUG OTA: ¡Hay actualización! silentOta=$silentOta');
+              if (!silentOta) {
+                OtaUpdateService.triggerUpdateModal(newVersion, urlApk);
+              } else {
+                return {
+                  'locations': locations,
+                  'novelties': data['novelty_types'] ?? [],
+                  'auto_assigned_location': autoAssignedLocation,
+                  'has_update': true,
+                  'new_version': newVersion,
+                  'url_apk': urlApk,
+                };
+              }
             } else {
-              print('DEBUG OTA: Ya estamos en la última versión, se ignora.');
+              print('DEBUG OTA: Ya estamos en la versión actual, se ignora.');
             }
           }
         }
