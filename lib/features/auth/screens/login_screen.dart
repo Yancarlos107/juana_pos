@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import '../providers/auth_providers.dart';
+import '../models/user_model.dart';
 import '../../printer/services/printer_service.dart';
 import '../../../core/storage/local_storage_repository.dart';
 import '../widgets/location_selection_dialog.dart';
