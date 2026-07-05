@@ -288,11 +288,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               _emailController.text.trim(),
               _pinController.text.trim(),
             );
-
-        final authResult = ref.read(authProvider);
-        if (mounted && authResult.status == AuthStatus.authenticated) {
-          await ref.read(localStorageProvider).setFirstLoginCompleted();
-        }
       } else {
         final pin = _pinController.text.trim();
         final db = await DatabaseHelper.instance.database;
@@ -315,7 +310,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
       final authState = ref.read(authProvider);
       // Si llegamos aquí sin excepción, solicitamos el Punto de Venta
-      if (mounted && authState.status == AuthStatus.authenticated) {
+      if (authState.status == AuthStatus.authenticated) {
         // 1. (Eliminado: Petición directa al servidor RC171 para evitar duplicidad, ahora se encola abajo)
 
         // 2. Capturar y guardar GPS (Solo se pide una vez al iniciar sesión)
@@ -350,10 +345,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           builder: (_) => const LocationSelectionDialog(),
         );
 
-        if (mounted) {
         if (success == true) {
+          // Marcar first login completo solo tras confirmar ubicación
+          await ref.read(localStorageProvider).setFirstLoginCompleted();
+
           if (_isFirstLogin) {
-            // Aseguramiento del PIN en SQLite para evitar que la inicialización lo borre o corrompa el hash
+            // PIN assurance: la inicialización (batch.delete) puede haber sobrescrito el hash
             try {
               final pin = _pinController.text.trim();
               if (pin.isNotEmpty) {
@@ -362,7 +359,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 final pinHash = sha1.convert(utf8.encode(pin)).toString();
 
                 if (userId != null) {
-                  // Actualizamos el hash si el usuario fue insertado por InitService
                   final updatedCount = await db.update(
                     'users',
                     {'password_hash': pinHash},
@@ -370,7 +366,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     whereArgs: [userId],
                   );
 
-                  // Si el usuario fue borrado por completo y no venía en la lista de InitService, lo reinsertamos
                   if (updatedCount == 0) {
                     final user = authState.user!;
                     final email = _emailController.text.trim();
@@ -392,12 +387,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               print('DEBUG: Error asegurando PIN post-login: $e');
             }
 
-            setState(() => _isFirstLogin = false);
-            _emailController.clear();
-            _pinController.clear();
+            // setState y limpieza de controladores sí necesitan mounted
+            if (mounted) {
+              setState(() => _isFirstLogin = false);
+              _emailController.clear();
+              _pinController.clear();
+            }
           }
 
-          // 4. Guardamos la transacción offline de Apertura de Caja para que se sincronice en la RC171
+          // 4. APERTURA DE CAJA: operación de DB, no depende de mounted
           try {
             final db = await DatabaseHelper.instance.database;
             final posLocationId =
@@ -416,48 +414,56 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   'open-${DateTime.now().microsecondsSinceEpoch}-$posLocationId',
               'session_id': null,
               'cashier_id': cashierId,
-                'pos_location_id': posLocationId,
-                'product_id': 'APERTURA DE CAJA',
-                'amount': 0.0,
-                'pmr': 0,
-                'status': 'pending',
-                'created_at': DateTime.now().toIso8601String(),
-                'qr_data': '', // Token vacío
-                'print_status': 0,
-                'lat': gpsData?['lat'],
-                'lon': gpsData?['lon'],
-                'plot_id': plotId,
-              });
-              print(
-                  'DEBUG: Transacción de APERTURA DE CAJA guardada localmente para desencole (RC174).');
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Caja abierta offline exitosamente (RC174)'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              }
-            } catch (e) {
-              print('DEBUG: Error al guardar APERTURA DE CAJA: $e');
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Error guardando RC174: $e'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
+              'pos_location_id': posLocationId,
+              'product_id': 'APERTURA DE CAJA',
+              'amount': 0.0,
+              'pmr': 0,
+              'status': 'pending',
+              'created_at': DateTime.now().toIso8601String(),
+              'qr_data': '',
+              'print_status': 0,
+              'lat': gpsData?['lat'],
+              'lon': gpsData?['lon'],
+              'plot_id': plotId,
+            });
+            print(
+                'DEBUG: Transacción de APERTURA DE CAJA guardada localmente para desencole (RC174).');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Caja abierta offline exitosamente (RC174)'),
+                  backgroundColor: Colors.green,
+                ),
+              );
             }
-
-            if (navigatorKey.currentContext != null) {
-              Navigator.pushReplacementNamed(navigatorKey.currentContext!, '/dashboard');
+          } catch (e) {
+            print('DEBUG: Error al guardar APERTURA DE CAJA: $e');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Error guardando RC174: $e'),
+                  backgroundColor: Colors.red,
+                ),
+              );
             }
-          } else {
-            // Si el usuario cancela, cerramos la sesión parcial
-            await ref.read(authProvider.notifier).logout(ref);
           }
-        } // if (mounted)
+
+          // Navegación vía navigatorKey, no depende del mounted del widget
+          if (navigatorKey.currentContext != null) {
+            Navigator.pushReplacementNamed(navigatorKey.currentContext!, '/dashboard');
+          } else {
+            // AuthGate ya debió haber navegado al detectar authProvider = authenticated
+            print('DEBUG: navigatorKey.currentContext null tras login, AuthGate debió navegar.');
+          }
+        } else {
+          // Si el usuario cancela, cerramos la sesión parcial
+          await ref.read(authProvider.notifier).logout(ref);
+        }
+      }
+    } catch (e) {
+      print('DEBUG: Error inesperado en _login: $e');
+      if (mounted) {
+        _showErrorSnackBar(e.toString().replaceFirst('Exception: ', ''));
       }
     } finally {
       if (mounted) setState(() => _isLoadingLogin = false);
