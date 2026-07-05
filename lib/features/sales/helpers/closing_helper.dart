@@ -860,7 +860,7 @@ class ClosingHelper {
         if (context.mounted) {
           showEmptySalesModal(context, onClose: () {
             if (isLogout && context.mounted) {
-              Navigator.pop(context);
+              _executeLogout(context, ref);
             }
           });
         }
