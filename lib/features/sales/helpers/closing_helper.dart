@@ -478,9 +478,10 @@ class ClosingHelper {
     final sessionId = sessionQuery.first['id'] as int;
     final unclosedSales = await db.query('transactions',
         where:
-            '(session_id = ? OR session_id IS NULL) AND is_closed = 0 AND product_id NOT IN (?, ?, ?, ?, ?)',
+            '(session_id = ? OR session_id IS NULL) AND cashier_id = ? AND is_closed = 0 AND product_id NOT IN (?, ?, ?, ?, ?)',
         whereArgs: [
           sessionId,
+          currentCashierId,
           'CIERRE DE CAJA',
           'APERTURA DE CAJA',
           'INGRESO_FISCALIZADOR',
@@ -882,7 +883,7 @@ class ClosingHelper {
       final posName = await storage.getPosLocationName();
       final branchName = posName ?? user?.branchName ?? 'Sucursal Juana';
 
-      var unclosedAgg;
+      List<Map<String, Object?>> unclosedAgg = [];
 
       try {
         print("--- ClosingHelper.performClosing --- 4");
@@ -897,7 +898,7 @@ class ClosingHelper {
         print('Error occurred while fetching unclosed sales: $e');
       }
 
-      var pmrSales;
+      List<Map<String, Object?>> pmrSales = [];
 
       try {
         print("--- ClosingHelper.performClosing --- 5");
@@ -911,7 +912,7 @@ class ClosingHelper {
         print('Error occurred while fetching PMR sales: $e');
       }
 
-      var reprintsResult;
+      List<Map<String, Object?>> reprintsResult = [];
 
       try {
         print("--- ClosingHelper.performClosing --- 6");
@@ -931,7 +932,8 @@ class ClosingHelper {
       Map<String, double> breakdownTotal = {};
 
       int pmrCount = pmrSales.length;
-      int reprintsCount = (reprintsResult.first['c'] as int?) ?? 0;
+      int reprintsCount =
+          reprintsResult.isEmpty ? 0 : (reprintsResult.first['c'] as int?) ?? 0;
       List<String> pmrHours = [];
 
       print("--- ClosingHelper.performClosing --- 7");

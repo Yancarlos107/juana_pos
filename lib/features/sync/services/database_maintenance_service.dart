@@ -85,10 +85,17 @@ class DatabaseMaintenanceService {
   static Future<void> _clearTransactions() async {
     try {
       final db = await DatabaseHelper.instance.database;
-      // Borramos todas las transacciones, como solicitó el usuario para emular
-      // el borrado periódico de la BD, manteniendo la sesión intacta.
-      int count = await db.delete('transactions');
-      debugPrint('Se borraron $count transacciones de la base de datos local.');
+      // Solo borramos transacciones YA confirmadas por el servidor
+      // (status='synced' con server_id válido). NUNCA se borran las que siguen
+      // 'pending' ni las 'synced' sin server_id (que el sync aún reenvía), para
+      // no perder ventas que todavía no llegaron al backend. El backup a .txt no
+      // es un respaldo válido de dinero: el criterio de borrado es "ya sincronizada",
+      // no "ya pasaron 3 días".
+      int count = await db.delete(
+        'transactions',
+        where: "status = 'synced' AND server_id IS NOT NULL AND server_id != ''",
+      );
+      debugPrint('Se borraron $count transacciones sincronizadas de la base de datos local.');
     } catch (e) {
       debugPrint('Error al limpiar tramas: $e');
     }

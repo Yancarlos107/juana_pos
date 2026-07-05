@@ -53,14 +53,23 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       ref.read(productsProvider.notifier).fetchProducts();
       ref.read(systemStatusProvider.notifier).forceCheckPendingTransactions();
 
-      final storage = ref.read(localStorageProvider);
-      final posName = await storage.getPosLocationName();
-      if (mounted) {
-        setState(() {
-          _posName = posName ?? ref.read(authProvider).user?.branchName ?? 'Estación';
-        });
-      }
+      _refreshPosName();
     });
+  }
+
+  /// Relee el nombre del punto de venta desde el almacenamiento.
+  /// Se invoca al montar y en cada tick del monitor (~5s), de modo que si la
+  /// sincronización en segundo plano reasigna el POS, el header se actualiza
+  /// solo, sin necesidad de reiniciar sesión. Solo hace setState si el valor
+  /// realmente cambió, para no forzar rebuilds innecesarios.
+  Future<void> _refreshPosName() async {
+    final storage = ref.read(localStorageProvider);
+    final posName = await storage.getPosLocationName();
+    final resolved =
+        posName ?? ref.read(authProvider).user?.branchName ?? 'Estación';
+    if (mounted && resolved != _posName) {
+      setState(() => _posName = resolved);
+    }
   }
 
   void _loadBalance() {
@@ -412,6 +421,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         _showSnackBar(
             next.errorMessage!, Icons.error_outline, Colors.redAccent);
       }
+    });
+
+    // Mantiene el header sincronizado con el POS almacenado: si el monitor de
+    // fondo reasigna el punto de venta (initializePOS cada 5 min), el nombre se
+    // actualiza en el siguiente tick en vez de quedar congelado hasta reingresar.
+    ref.listen(systemStatusProvider, (prev, next) {
+      _refreshPosName();
     });
 
     return Scaffold(
