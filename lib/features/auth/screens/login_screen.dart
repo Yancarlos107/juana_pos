@@ -283,8 +283,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // Limpiar cualquier estado residual de fiscalizador ANTES de iniciar sesión con un usuario normal
       ref.read(reviewerNameProvider.notifier).state = null;
 
+      final UserModel user;
       if (_isFirstLogin) {
-        await ref.read(authProvider.notifier).login(
+        user = await ref.read(authProvider.notifier).authenticateOnly(
               _emailController.text.trim(),
               _pinController.text.trim(),
             );
@@ -300,17 +301,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           _showErrorSnackBar('PIN incorrecto o no autorizado');
           _pinController.clear();
           _pinFocusNode.requestFocus();
+          if (mounted) setState(() => _isLoadingLogin = false);
           return;
         }
 
         final email = results.first['email']?.toString() ?? '01';
 
-        await ref.read(authProvider.notifier).login(email, pin);
+        user = await ref.read(authProvider.notifier).authenticateOnly(email, pin);
       }
 
-      final authState = ref.read(authProvider);
       // Si llegamos aquí sin excepción, solicitamos el Punto de Venta
-      if (authState.status == AuthStatus.authenticated) {
+      if (user != null) {
         // 1. (Eliminado: Petición directa al servidor RC171 para evitar duplicidad, ahora se encola abajo)
 
         // 2. Capturar y guardar GPS (Solo se pide una vez al iniciar sesión)
@@ -355,7 +356,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               final pin = _pinController.text.trim();
               if (pin.isNotEmpty) {
                 final db = await DatabaseHelper.instance.database;
-                final userId = authState.user?.id;
+                final userId = user.id;
                 final pinHash = sha1.convert(utf8.encode(pin)).toString();
 
                 if (userId != null) {
@@ -367,7 +368,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   );
 
                   if (updatedCount == 0) {
-                    final user = authState.user!;
                     final email = _emailController.text.trim();
                     await db.insert(
                       'users',
@@ -402,7 +402,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 await ref.read(localStorageProvider).getPosLocationId();
             final gpsData =
                 await ref.read(localStorageProvider).getGpsLocation();
-            final cashierId = authState.user?.id ?? 1;
+            final cashierId = user.id;
 
             final random = math.Random();
             final plotIdBytes =
@@ -447,6 +447,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               );
             }
           }
+
+          // Finalizar el login cambiando el estado global a autenticado
+          await ref.read(authProvider.notifier).finalizeLogin(user);
 
           // Navegación vía navigatorKey, no depende del mounted del widget
           if (navigatorKey.currentContext != null) {

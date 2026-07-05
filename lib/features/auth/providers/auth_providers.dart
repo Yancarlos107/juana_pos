@@ -72,6 +72,38 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  /// Realiza la autenticación en el servidor (obteniendo el token) pero sin cambiar el estado
+  /// global a authenticated para evitar desmontar el LoginScreen prematuramente.
+  Future<UserModel> authenticateOnly(String email, String password) async {
+    state = state.copyWith(status: AuthStatus.loading, errorMessage: null);
+    try {
+      final user = await _authService.login(email, password);
+      return user;
+    } catch (e) {
+      state = state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: e.toString().replaceFirst('Exception: ', ''),
+      );
+      rethrow;
+    }
+  }
+
+  /// Finaliza el flujo de autenticación estableciendo el estado global como autenticado.
+  Future<void> finalizeLogin(UserModel user) async {
+    try {
+      await _sessionService.validateAndOpenSession(user.branchId);
+      state = state.copyWith(
+        status: AuthStatus.authenticated,
+        user: user,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: e.toString().replaceFirst('Exception: ', ''),
+      );
+    }
+  }
+
   /// Cerrar sesión
   Future<void> logout(WidgetRef ref) async {
     ref.read(reviewerNameProvider.notifier).state = null;
