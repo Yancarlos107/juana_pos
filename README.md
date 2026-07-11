@@ -8,7 +8,7 @@ Aplicación Flutter para puntos de venta de la red de recarga Juana. Gestiona ve
 
 | Ítem | Detalle |
 |------|---------|
-| Versión | 2.14 |
+| Versión | 1.11.0 |
 | Rama principal | `main` |
 | Rama activa | `feature/epson-printer` |
 | Compilación | Sin errores |

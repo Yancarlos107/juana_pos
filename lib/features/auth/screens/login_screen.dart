@@ -100,7 +100,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (mounted) {
       setState(() {
         _macAddress = mac ?? 'Desconocida';
-        if (env != null && env.toLowerCase() != 'produccion') {
+        if (env != null && env.toLowerCase() != 'production') {
           _envString = 'v_test ${ApiConstants.appVersion}';
         } else {
           _envString = ApiConstants.displayVersion;
@@ -308,7 +308,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
         final email = results.first['email']?.toString() ?? '01';
 
-        user = await ref.read(authProvider.notifier).authenticateOnly(email, pin);
+        user =
+            await ref.read(authProvider.notifier).authenticateOnly(email, pin);
       }
 
       // Si llegamos aquí sin excepción, solicitamos el Punto de Venta
@@ -326,8 +327,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             if (permission == LocationPermission.whileInUse ||
                 permission == LocationPermission.always) {
               Position position = await Geolocator.getCurrentPosition(
-                  desiredAccuracy: LocationAccuracy.medium,
-                  timeLimit: const Duration(seconds: 5),
+                desiredAccuracy: LocationAccuracy.medium,
+                timeLimit: const Duration(seconds: 5),
               );
               await ref
                   .read(localStorageProvider)
@@ -454,10 +455,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
           // Navegación vía navigatorKey, no depende del mounted del widget
           if (navigatorKey.currentContext != null) {
-            Navigator.pushReplacementNamed(navigatorKey.currentContext!, '/dashboard');
+            Navigator.pushReplacementNamed(
+                navigatorKey.currentContext!, '/dashboard');
           } else {
             // AuthGate ya debió haber navegado al detectar authProvider = authenticated
-            print('DEBUG: navigatorKey.currentContext null tras login, AuthGate debió navegar.');
+            print(
+                'DEBUG: navigatorKey.currentContext null tras login, AuthGate debió navegar.');
           }
         } else {
           // Si el usuario cancela, cerramos la sesión parcial
@@ -1127,9 +1130,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('Archivo guardado en:',
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.bold)),
+                          const Text('Archivo guardado en:',
+                              style: TextStyle(fontWeight: FontWeight.bold)),
                           SelectableText(finalPath,
                               style: const TextStyle(color: Colors.blue)),
                           const SizedBox(height: 10),

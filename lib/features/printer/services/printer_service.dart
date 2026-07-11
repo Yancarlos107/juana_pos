@@ -357,8 +357,8 @@ class PrinterService {
       bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
       bytes.addAll([0x1D, 0x21, 0x00]); // Tamaño NORMAL
 
-      // Se comenta el código QR temporalmente a solicitud del usuario
-      // bytes.addAll(_cmdQrCode(qrData));
+      // Se reactiva el código QR en los tickets de venta
+      bytes.addAll(_cmdQrCode(qrData));
 
       bytes.addAll([0x1B, 0x64, 0x01]); // 1 salto
       bytes.addAll([0x1D, 0x56, 0x42, 0x00]); // Cortar papel
