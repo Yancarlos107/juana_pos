@@ -349,17 +349,19 @@ class PrinterService {
         bytes.addAll(_text('Serial: $transactionId\n'));
       }
 
+      bytes.addAll([0x1B, 0x61, 0x01]); // Centrar (denominación + QR)
       bytes.addAll([0x1B, 0x45, 0x01]); // Bold
-      bytes.addAll([0x1D, 0x21, 0x33]); // Tamaño GIGANTE (x4)
+      bytes.addAll([0x1D, 0x21, 0x31]); // Ancho x4 (igual), alto x2 (50% del alto anterior)
 
       bytes.addAll(_text('\$${CurrencyFormatter.format(amount)}\n'));
 
       bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
       bytes.addAll([0x1D, 0x21, 0x00]); // Tamaño NORMAL
 
-      // Se reactiva el código QR en los tickets de venta
-      bytes.addAll(_cmdQrCode(qrData));
+      // QR de la venta, centrado y más grande (~+70%: módulo 5 -> 8)
+      bytes.addAll(_cmdQrCode(qrData, moduleSize: 8));
 
+      bytes.addAll([0x1B, 0x61, 0x00]); // Volver a la izquierda
       bytes.addAll([0x1B, 0x64, 0x01]); // 1 salto
       bytes.addAll([0x1D, 0x56, 0x42, 0x00]); // Cortar papel
 
@@ -802,15 +804,15 @@ class PrinterService {
   }
 
   /// Genera comando nativo ESC/POS para QR Code (GS ( k)
-  List<int> _cmdQrCode(String data) {
+  List<int> _cmdQrCode(String data, {int moduleSize = 5}) {
     final dataBytes = data.codeUnits;
     final store = dataBytes.length + 3;
     final bytes = <int>[];
 
     // 1. Modelo QR (Modelo 2)
     bytes.addAll([0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]);
-    // 2. Tamaño del módulo (5 en lugar de 6 para hacerlo un poco más pequeño)
-    bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x05]);
+    // 2. Tamaño del módulo (por defecto 5; el tiquete de venta usa 8)
+    bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, moduleSize]);
     // 3. Nivel de corrección (M)
     bytes.addAll([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]);
     // 4. Cargar datos

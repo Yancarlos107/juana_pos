@@ -2,13 +2,15 @@ class ApiConstants {
   // Cambio rápido entre entornos
   static const bool isProduction = true;
 
+  // Entorno prod2 (nuevo host valliu). Descomentar para migrar de entorno.
+  // static const String baseUrlProd = 'https://api-sir-cnc-prod2.valliu.co/api';
   static const String baseUrlProd = 'http://35.208.37.141:8089/api';
   static const String baseUrlDev = 'http://35.209.80.61:8089/api';
 
   static const String baseUrl = isProduction ? baseUrlProd : baseUrlDev;
 
   // Versión de la aplicación
-  static const String appVersion = '1.11.0';
+  static const String appVersion = '1.11.1';
   static String get displayVersion =>
       isProduction ? 'v$appVersion' : 'v_test $appVersion';
 
