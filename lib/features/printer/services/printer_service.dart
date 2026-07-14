@@ -358,8 +358,8 @@ class PrinterService {
       bytes.addAll([0x1B, 0x45, 0x00]); // Quitar bold
       bytes.addAll([0x1D, 0x21, 0x00]); // Tamaño NORMAL
 
-      // QR de la venta, centrado y más grande (+70% respecto al módulo 5 previo: módulo 9)
-      bytes.addAll(_cmdQrCode(qrData, moduleSize: 9));
+      // QR de la venta, centrado y más grande (+35% respecto al módulo 5 previo: módulo 7)
+      bytes.addAll(_cmdQrCode(qrData, moduleSize: 7));
 
       bytes.addAll([0x1B, 0x61, 0x00]); // Volver a la izquierda
       bytes.addAll([0x1B, 0x64, 0x01]); // 1 salto

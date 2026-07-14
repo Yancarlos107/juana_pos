@@ -13,6 +13,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../monitoring/services/system_status_service.dart';
 import '../../../core/utils/device_utils.dart';
 import '../../../core/utils/print_log_helper.dart';
+import '../../../core/utils/sale_qr.dart';
 
 // ==================== Proveedor del Servicio ====================
 
@@ -245,7 +246,8 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
 
       // Se fuerza SIEMPRE la generación offline
       final posLocationId = await _storage.getPosLocationId();
-      final localId = "OFF-${DateTime.now().microsecondsSinceEpoch}-$posLocationId";
+      final now = DateTime.now();
+      final localId = "OFF-${now.microsecondsSinceEpoch}-$posLocationId";
       
       final chars = 'abcdef0123456789';
       final random = Random();
@@ -260,6 +262,17 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
       final randomNum = random.nextInt(10000000).toString().padLeft(7, '0');
       final deviceHash = await _storage.getDeviceHash();
       final serialNumber = '$deviceHash-$randomNum-$posLocationId';
+
+      // Contenido que se IMPRIME en el QR de venta (para el validador): JSON
+      // con la info de la venta en Base64. NO reemplaza a qr_data (que sigue
+      // siendo el token para backend/cuadre); solo es lo que se pinta en papel.
+      final qrCodeJson = SaleQr.build(
+        fhUnix: now.millisecondsSinceEpoch ~/ 1000,
+        fareId: int.tryParse(product.id) ?? product.id,
+        pmr: product.pmr ? 1 : 0,
+        serial: serialNumber,
+        value: product.value,
+      );
 
       
       // 2. Decrementar saldo local tras éxito (DESHABILITADO POR PM)
@@ -288,7 +301,7 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
         'amount': product.value,
         'pmr': product.pmr ? 1 : 0,
         'status': 'pending', // Siempre local first
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': now.toIso8601String(),
         'qr_data': qrCodeStr,
         'print_status': 0, // Inicia en 0, la UI lo actualizará a 1 si imprime
         'lat': gpsData?['lat'],
@@ -299,7 +312,7 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
       });
 
       final result = QrPurchaseResult(
-        qrCode: qrCodeStr,
+        qrCode: qrCodeJson,
         transactionId: localId,
         yourNewBalance: newBalance,
         rawData: {'local_id': insertedLocalId, 'serial_number': serialNumber},

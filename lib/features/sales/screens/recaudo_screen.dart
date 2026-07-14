@@ -4,6 +4,7 @@ import '../providers/sales_providers.dart';
 import '../../../core/database/database_helper.dart';
 import '../../printer/services/printer_service.dart';
 import '../../auth/providers/auth_providers.dart';
+import '../../../core/utils/sale_qr.dart';
 import '../../auth/services/session_service.dart';
 import '../models/tarifa_model.dart';
 import '../services/closure_service.dart';
@@ -346,17 +347,32 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
     } else {
       final serialNumber = sale['serial_number']?.toString() ?? 'N/A';
 
-      final emailString = userQuery != null && userQuery.isNotEmpty 
+      final emailString = userQuery != null && userQuery.isNotEmpty
           ? userQuery.first['email']?.toString() ?? '01'
           : ref.read(authProvider).user?.email ?? '01';
       final cashierCode = emailString.split('@').first;
 
       final posLocationId = sale['pos_location_id'] as int?;
 
+      // Reconstruimos el QR JSON (Base64) desde los datos guardados de la venta,
+      // para que la reimpresión pinte el mismo contenido que la impresión original.
+      final createdAtStr = sale['created_at']?.toString();
+      final fhUnix =
+          (DateTime.tryParse(createdAtStr ?? '') ?? DateTime.now())
+                  .millisecondsSinceEpoch ~/
+              1000;
+      final saleQrJson = SaleQr.build(
+        fhUnix: fhUnix,
+        fareId: int.tryParse(pId) ?? pId,
+        pmr: (sale['pmr'] as int?) ?? 0,
+        serial: serialNumber,
+        value: amount,
+      );
+
       printResult = await printer.printTicket(
         transactionId: serialNumber,
         amount: amount,
-        qrData: qrData,
+        qrData: saleQrJson,
         cashierName: cashierName,
         cashierCode: cashierCode,
         posLocationId: posLocationId,
