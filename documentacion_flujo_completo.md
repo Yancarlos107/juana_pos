@@ -199,11 +199,30 @@ graph TD
 * `id`: `"OFF-[microseconds]-[posLocationId]"`
 * `product_id`: ID del producto (MongoDB ObjectId)
 * `amount`: Costo de la tarifa (ej: `0.50`)
-* `qr_data`: String de 32 caracteres aleatorios (`'abcdef0123456789'`) que será decodificado por el torniquete.
+* `qr_data`: String de 32 caracteres aleatorios (`'abcdef0123456789'`). Es el **token** de la venta; se guarda y se envía al backend (RC172/RC173) como identificador. **No cambió.**
 * `serial_number`: Código serial único estructurado.
 * `mac_address`: MAC Address de la tablet.
 * `plot_id`: MD5 alfanumérico único para reconciliación en backend.
 * `print_status`: `0` al crearse, cambia a `1` al confirmarse la impresión física.
+
+#### QR impreso del tiquete de venta (v1.12.x)
+
+A partir de v1.12.x, lo que se **imprime** en el QR del tiquete de venta ya **no** es el token crudo, sino un **JSON codificado en base64** con la info de la venta, para que el **validador** lo lea directamente (sin consultar el backend). Se construye con `SaleQr.build` (`lib/core/utils/sale_qr.dart`) y se reconstruye idéntico en la reimpresión (`recaudo_screen`).
+
+```json
+{
+  "fh": 1720900413,                         // fecha/hora unix (segundos)
+  "pi": 31,                                 // pos_location_id
+  "t":  "abcdef0123456789...",             // token de la venta (= qr_data / 'qr' del backend)
+  "tm": 120,                                // tiempo de vida (constante SaleQr.defaultTiempoVida)
+  "pm": 0,                                  // PMR (0/1)
+  "va": 0.50                                // valor/precio
+}
+```
+
+* **Identificación contra el backend:** por el token `t` (↔ campo `qr` de RC172/RC173).
+* **Desacople:** `qr_data`, el cuadre (RC172) y el sync (RC173) **no se tocaron**; el JSON es solo el contenido impreso para el validador.
+* **Tamaño del QR:** al llevar más datos, el QR tiene más módulos; el `moduleSize` en `PrinterService` se ajusta para el tamaño físico deseado (ver `_cmdQrCode`).
 
 ---
 

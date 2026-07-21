@@ -51,7 +51,7 @@ Aplicación Flutter para puntos de venta de la red de recarga Juana. Gestiona ve
 - **Otras impresoras USB/BT**: `flutter_thermal_printer` (detección por clase USB 7).
 - `PrinterService` detecta automáticamente cuál impresora está conectada y enruta la impresión.
 - Retorno `bool?`: `null` = permiso USB pendiente (usuario debe aceptar y reintentar), `true/false` = resultado.
-- Ticket de venta con QR, datos del cajero, sucursal, producto y monto.
+- Ticket de venta con QR, datos del cajero, sucursal, producto y monto. Desde v1.12.x el **QR impreso** lleva un JSON en base64 con la info de la venta (`fh` fecha, `pi` pos, `t` token, `tm` tiempo de vida, `pm` PMR, `va` valor) para que el validador lo lea sin backend. Ver `lib/core/utils/sale_qr.dart`. El `qr_data` que se guarda/envía al backend sigue siendo el token aleatorio (sin cambios).
 - Ticket de cierre con desglose, QR de cierre, horas PMR y total.
 - Zona horaria forzada a UTC-5 (Ecuador/Colombia).
 

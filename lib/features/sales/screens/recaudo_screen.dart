@@ -363,9 +363,9 @@ class _RecaudoScreenState extends ConsumerState<RecaudoScreen> {
               1000;
       final saleQrJson = SaleQr.build(
         fhUnix: fhUnix,
-        fareId: int.tryParse(pId) ?? pId,
+        posId: posLocationId ?? 0,
+        token: qrData,
         pmr: (sale['pmr'] as int?) ?? 0,
-        serial: serialNumber,
         value: amount,
       );
 

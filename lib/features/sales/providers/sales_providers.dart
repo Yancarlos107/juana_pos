@@ -268,9 +268,9 @@ class QrPurchaseNotifier extends StateNotifier<QrPurchaseState> {
       // siendo el token para backend/cuadre); solo es lo que se pinta en papel.
       final qrCodeJson = SaleQr.build(
         fhUnix: now.millisecondsSinceEpoch ~/ 1000,
-        fareId: int.tryParse(product.id) ?? product.id,
+        posId: posLocationId ?? 0,
+        token: qrCodeStr,
         pmr: product.pmr ? 1 : 0,
-        serial: serialNumber,
         value: product.value,
       );
 

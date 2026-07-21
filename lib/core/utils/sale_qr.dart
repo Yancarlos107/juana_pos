@@ -14,25 +14,26 @@ class SaleQr {
 
   /// Llaves (compactas para reducir el tamaño del QR):
   /// - fh: fecha/hora en unix timestamp (segundos)
-  /// - fa: fare_id (id de la tarifa)
+  /// - pi: pos_location_id
+  /// - t:  token de la venta (mismo `qr_data` que viaja al backend como `qr`,
+  ///       para identificar la venta al validar contra el back)
   /// - tm: tiempo de vida
   /// - pm: activación PMR (0/1)
-  /// - sn: serial único de la venta (incluye el pos)
   /// - va: valor/precio de la tarifa
   static String build({
     required int fhUnix,
-    required Object fareId,
+    required int posId,
+    required String token,
     required int pmr,
-    required String serial,
     required num value,
     int tiempoVida = defaultTiempoVida,
   }) {
     final payload = <String, dynamic>{
       'fh': fhUnix,
-      'fa': fareId,
+      'pi': posId,
+      't': token,
       'tm': tiempoVida,
       'pm': pmr,
-      'sn': serial,
       'va': value,
     };
     return base64Encode(utf8.encode(jsonEncode(payload)));

@@ -10,7 +10,7 @@ class ApiConstants {
   static const String baseUrl = isProduction ? baseUrlProd : baseUrlDev;
 
   // Versión de la aplicación
-  static const String appVersion = '1.12.0';
+  static const String appVersion = '1.12.2';
   static String get displayVersion =>
       isProduction ? 'v$appVersion' : 'v_test $appVersion';
 

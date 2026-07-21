@@ -104,7 +104,9 @@ La base de datos maneja tablas esenciales para el funcionamiento offline:
 Al arrancar, descarga catálogos. Si la API manda un objeto `pos_assign_pos_location`, la app lo guarda inmediatamente en memoria y salta de forma transparente la pantalla de selección de punto de venta post-login. Envía la dirección MAC (`ime`) en la solicitud para identificarse.
 
 ### B. El Proceso de Venta (`QrPurchaseNotifier`)
-Al tocar una tarifa, se genera un ID local, se encripta un string alfanumérico aleatorio (QR local) y se inserta en `transactions`. El estado nace en `pending`. Esto dispara el ticket de inmediato por el puerto USB.
+Al tocar una tarifa, se genera un ID local, se crea un string alfanumérico aleatorio de 32 caracteres (el token, guardado en `qr_data`) y se inserta en `transactions`. El estado nace en `pending`. Esto dispara el ticket de inmediato por el puerto USB.
+
+> **QR impreso (v1.12.x):** el `qr_data` guardado y enviado al backend (RC172/RC173) sigue siendo ese token de 32 chars. Pero lo que se **imprime** en el QR del tiquete de venta es ahora un **JSON en base64** con la info de la venta (`fh, pi, t, tm, pm, va`, donde `t` = el token), construido por `SaleQr.build` (`lib/core/utils/sale_qr.dart`). Así el validador identifica la venta (por `t` ↔ `qr`) sin consultar el backend. La reimpresión (`recaudo`) reconstruye el mismo JSON desde los datos guardados.
 
 ### C. Bloqueo de Recaudo e Ingreso de Fiscalizador
 Si se toca la pestaña "Recaudo", se pide un PIN. Si hace match en SQLite (`is_reviewer = 1`), se inserta en `transactions` una trama invisible (`product_id = 'INGRESO_FISCALIZADOR'`, `is_closed = 1`). Esto permite la entrada a la vista y deja la huella de auditoría (Trama RC171).
