@@ -86,16 +86,15 @@ class DatabaseMaintenanceService {
     try {
       final db = await DatabaseHelper.instance.database;
       // Solo borramos transacciones YA confirmadas por el servidor
-      // (status='synced' con server_id válido). NUNCA se borran las que siguen
-      // 'pending' ni las 'synced' sin server_id (que el sync aún reenvía), para
-      // no perder ventas que todavía no llegaron al backend. El backup a .txt no
-      // es un respaldo válido de dinero: el criterio de borrado es "ya sincronizada",
-      // no "ya pasaron 3 días".
+      // (status='synced' con server_id válido) y que tengan más de 3 días de antigüedad
+      // para evitar descuadres en los cierres de arrastre diarios.
+      final limitDate = DateTime.now().subtract(const Duration(days: _daysToKeepDb)).toIso8601String();
       int count = await db.delete(
         'transactions',
-        where: "status = 'synced' AND server_id IS NOT NULL AND server_id != ''",
+        where: "status = 'synced' AND server_id IS NOT NULL AND server_id != '' AND created_at < ?",
+        whereArgs: [limitDate],
       );
-      debugPrint('Se borraron $count transacciones sincronizadas de la base de datos local.');
+      debugPrint('Se borraron $count transacciones sincronizadas antiguas de la base de datos local.');
     } catch (e) {
       debugPrint('Error al limpiar tramas: $e');
     }
