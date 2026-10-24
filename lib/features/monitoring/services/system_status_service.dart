@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sqflite/sqflite.dart';
 import '../../../core/database/database_helper.dart';
@@ -11,6 +12,8 @@ import '../../printer/services/printer_service.dart';
 import '../../sync/services/init_service.dart';
 import '../../../core/storage/local_storage_repository.dart';
 import '../../sync/services/database_maintenance_service.dart';
+import '../../../core/utils/print_log_helper.dart';
+import '../../../main.dart';
 
 final systemStatusProvider = StateNotifierProvider<SystemStatusNotifier, SystemStatus>((ref) {
   final dio = ref.watch(dioProvider);
@@ -29,6 +32,8 @@ class SystemStatusNotifier extends StateNotifier<SystemStatus> {
   final LocalStorageRepository _storage;
   Timer? _timer;
   DateTime? _lastConfigSync;
+  // Último estado conocido de la impresora (null = aún no se ha consultado)
+  bool? _lastPrinterConnected;
 
   SystemStatusNotifier(this._dio, this._syncService, this._printerService, this._initService, this._storage) : super(SystemStatus()) {
     _initMonitoring();
@@ -58,6 +63,7 @@ class SystemStatusNotifier extends StateNotifier<SystemStatus> {
   Future<void> _checkAllStatuses() async {
     final isOnline = await _checkInternetPing();
     final isPrinterConnected = await _checkPrinter();
+    await _onPrinterStatus(isPrinterConnected);
     final isPmrConnected = await _checkPmr();
     final isCameraConnected = await _checkCameraPing();
     final pendingCount = await _checkPendingTransactions();
@@ -136,10 +142,53 @@ class SystemStatusNotifier extends StateNotifier<SystemStatus> {
   /// Fuerza un chequeo inmediato de la impresora
   Future<bool> checkPrinterNow() async {
     final isConnected = await _checkPrinter();
+    await _onPrinterStatus(isConnected);
     if (mounted) {
       state = state.copyWith(isPrinterConnected: isConnected);
     }
     return isConnected;
+  }
+
+  /// Registra la trama RC175 (desconexión) / RC176 (conexión) cuando cambia el
+  /// estado de la impresora. Si al arrancar ya está desconectada, se registra
+  /// la desconexión; si arranca conectada no se registra nada.
+  Future<void> _onPrinterStatus(bool isConnected) async {
+    final previous = _lastPrinterConnected;
+    if (previous == isConnected) return;
+    _lastPrinterConnected = isConnected;
+    if (previous == null && isConnected) return;
+
+    final now = DateTime.now();
+    if (!isConnected) _showPrinterDisconnectedSnackBar(now);
+
+    await PrintLogHelper.logPrinterEvent(isConnected, now);
+    try {
+      final db = await DatabaseHelper.instance.database;
+      await db.insert('printer_events', {
+        'type_code': isConnected ? 'RC176' : 'RC175',
+        'created_at': now.toIso8601String(),
+        'cashier_id': await _storage.getActiveCashierId(),
+        'pos_location_id': await _storage.getPosLocationId(),
+        'status': 'pending',
+      });
+    } catch (e) {
+      await PrintLogHelper.logDbError('printer_events: $e');
+    }
+  }
+
+  void _showPrinterDisconnectedSnackBar(DateTime at) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    final stamp =
+        '${two(at.hour)}:${two(at.minute)}:${two(at.second)} ${two(at.day)}/${two(at.month)}/${at.year}';
+    scaffoldMessengerKey.currentState
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text('DC-$stamp',
+            style: const TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: const Color(0xFF6642F8),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 5),
+      ));
   }
 
   Future<bool> _checkPmr() async {

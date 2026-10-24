@@ -86,6 +86,21 @@ class PrintLogHelper {
     }
   }
 
+  /// Registra la conexión/desconexión de la impresora
+  static Future<void> logPrinterEvent(bool connected, DateTime at) async {
+    try {
+      final file = await _getLogFile();
+      final dateStr = _formatDate(at);
+
+      final line = connected
+          ? '[$dateStr] IMPRESORA CONECTADA (RC176)\n'
+          : '[$dateStr] IMPRESORA DESCONECTADA (RC175)\n';
+      await file.writeAsString(line, mode: FileMode.append);
+    } catch (e) {
+      print('Error escribiendo log de impresora: $e');
+    }
+  }
+
   /// Registra un fallo en la base de datos local SQLite
   static Future<void> logDbError(String errorMessage) async {
     try {

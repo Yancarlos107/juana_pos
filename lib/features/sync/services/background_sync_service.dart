@@ -51,6 +51,34 @@ class BackgroundSyncService {
     } finally {
       _isSyncing = false;
     }
+
+    // Tramas de impresora (RC175/RC176): van por fuera del ciclo principal y
+    // sin await, para que nunca retrasen ni bloqueen ventas, aperturas o cierres
+    // (el backend aún no las tiene montadas).
+    _syncPrinterEventsSafe();
+  }
+
+  bool _isSyncingPrinterEvents = false;
+  DateTime? _lastPrinterEventsAttempt;
+  static const _printerEventsInterval = Duration(minutes: 1);
+  static const _printerEventsBatch = 20;
+
+  Future<void> _syncPrinterEventsSafe() async {
+    if (_isSyncingPrinterEvents) return;
+    final now = DateTime.now();
+    if (_lastPrinterEventsAttempt != null &&
+        now.difference(_lastPrinterEventsAttempt!) < _printerEventsInterval) {
+      return;
+    }
+    _lastPrinterEventsAttempt = now;
+    _isSyncingPrinterEvents = true;
+    try {
+      await _syncPrinterEvents();
+    } catch (e) {
+      print('DEBUG: Error sincronizando eventos de impresora: $e');
+    } finally {
+      _isSyncingPrinterEvents = false;
+    }
   }
 
   Future<void> _syncTransactions() async {
@@ -541,6 +569,79 @@ class BackgroundSyncService {
   }
 
 
+
+  /// Envía las tramas de desconexión (RC175) / conexión (RC176) de la impresora
+  Future<void> _syncPrinterEvents() async {
+    final db = await DatabaseHelper.instance.database;
+    final pending = await db.query('printer_events',
+        where: 'status = ?',
+        whereArgs: ['pending'],
+        orderBy: 'id ASC',
+        limit: _printerEventsBatch);
+    if (pending.isEmpty) return;
+
+    final deviceInfo = await _getDeviceInfo();
+    final currentPosLocationId = await _storage.getPosLocationId();
+
+    for (final ev in pending) {
+      final typeCode = ev['type_code'].toString();
+      final cashierId = ev['cashier_id'] as int?;
+      final posLocationId = ev['pos_location_id'] ?? currentPosLocationId;
+
+      String employeeName = "Cajero";
+      if (cashierId != null) {
+        final userQuery = await db.query('users',
+            where: 'id = ?', whereArgs: [cashierId], limit: 1);
+        if (userQuery.isNotEmpty) {
+          employeeName = userQuery.first['name'] as String? ?? employeeName;
+        }
+      }
+
+      final payload = {
+        "type_code": typeCode,
+        "token": "",
+        "dat": (DateTime.parse(ev['created_at'].toString()).millisecondsSinceEpoch ~/ 1000).toString(),
+        "lat": "0.0",
+        "lon": "0.0",
+        "hw": deviceInfo['hw'],
+        "ime": deviceInfo['ime'],
+        "employee_full_name": employeeName,
+        "cashier_id": (cashierId ?? 1).toString(),
+        "typ": typeCode,
+        "ver": "1.0.0",
+        if (posLocationId != null)
+          "pos_location_id": posLocationId.toString(),
+      };
+
+      try {
+        final response = await _dio.post(
+          '/pos-transactions',
+          data: payload,
+          options: Options(
+            sendTimeout: const Duration(seconds: 5),
+            receiveTimeout: const Duration(seconds: 5),
+            validateStatus: (status) => status != null && status < 500,
+          ),
+        );
+        if (response.statusCode == 200 ||
+            response.statusCode == 201 ||
+            response.statusCode == 409) {
+          await db.update('printer_events', {'status': 'synced'},
+              where: 'id = ?', whereArgs: [ev['id']]);
+          print('DEBUG: Evento impresora ($typeCode) sincronizado: ${ev['id']}');
+        } else {
+          // Backend aún no acepta la trama: se deja pendiente y se corta la
+          // ronda para no insistir con el resto hasta el próximo intento.
+          print(
+              'DEBUG: Error al sincronizar evento impresora ($typeCode) ${ev['id']}: ${response.statusCode}');
+          return;
+        }
+      } catch (e) {
+        print('DEBUG: Fallo al sincronizar evento impresora ($typeCode) ${ev['id']}: $e');
+        return;
+      }
+    }
+  }
 
   Future<String> _getPersistentUuid() async {
     final prefs = await SharedPreferences.getInstance();

@@ -5,7 +5,7 @@ import 'package:path_provider/path_provider.dart';
 
 class DatabaseHelper {
   static const _databaseName = "JuanaPos.db";
-  static const _databaseVersion = 15;
+  static const _databaseVersion = 16;
 
   // Singleton class
   DatabaseHelper._privateConstructor();
@@ -127,6 +127,19 @@ class DatabaseHelper {
       // Migración v14 → v15: Add reviewer_id
       await db.execute('ALTER TABLE transactions ADD COLUMN reviewer_id INTEGER');
     }
+    if (oldVersion < 16) {
+      // Migración v15 → v16: Registro de conexión/desconexión de impresora
+      await db.execute('''
+      CREATE TABLE IF NOT EXISTS printer_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type_code TEXT NOT NULL, -- 'RC175' desconexión, 'RC176' conexión
+        created_at TEXT NOT NULL,
+        cashier_id INTEGER,
+        pos_location_id INTEGER,
+        status TEXT NOT NULL DEFAULT 'pending' -- 'pending', 'synced'
+      )
+      ''');
+    }
   }
 
   Future _onCreate(Database db, int version) async {
@@ -199,6 +212,18 @@ class DatabaseHelper {
         closed_at TEXT,
         status TEXT NOT NULL, -- 'open', 'closed', 'late_closed'
         is_late INTEGER DEFAULT 0
+      )
+    ''');
+
+    // 6. Eventos de impresora (tramas RC175/RC176)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS printer_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type_code TEXT NOT NULL, -- 'RC175' desconexión, 'RC176' conexión
+        created_at TEXT NOT NULL,
+        cashier_id INTEGER,
+        pos_location_id INTEGER,
+        status TEXT NOT NULL DEFAULT 'pending' -- 'pending', 'synced'
       )
     ''');
   }

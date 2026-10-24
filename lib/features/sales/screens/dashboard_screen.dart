@@ -156,6 +156,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   void _processCartSales() async {
     if (_cart.isEmpty) return;
+    if (_cartTotalItems > _maxCartItems) return;
 
     // 1. Clonar el carrito para procesarlo en segundo plano
     final cartCopy = Map<Product, int>.from(_cart);
@@ -1021,7 +1022,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
+  // Máximo de ventas por transacción (suma de todas las tarifas del carrito)
+  static const int _maxCartItems = 50;
+
   void _addToCart(Product product) {
+    if (_cartTotalItems >= _maxCartItems) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+          content: Text('Máximo $_maxCartItems ventas por transacción'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ));
+      return;
+    }
     setState(() {
       _cart[product] = (_cart[product] ?? 0) + 1;
     });

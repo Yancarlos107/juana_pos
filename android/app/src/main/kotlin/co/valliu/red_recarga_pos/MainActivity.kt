@@ -86,6 +86,20 @@ class MainActivity : FlutterActivity() {
         setupPrinterChannel(flutterEngine)
         setupKioskChannel(flutterEngine)
         setupOtaChannel(flutterEngine)
+        enableMultiNetworkCoexist()
+    }
+
+    // Habilita la coexistencia multi-red del firmware (Ethernet = red interna,
+    // datos externos por WiFi/4G). El cambio aplica tras reiniciar el equipo.
+    private fun enableMultiNetworkCoexist() {
+        try {
+            val intent = Intent("android.intent.action.multiple_network_coexist")
+            intent.putExtra("coexist_value", "on")
+            applicationContext.sendBroadcast(intent)
+            log("Broadcast multiple_network_coexist=on enviado")
+        } catch (e: Exception) {
+            log("Error enviando multiple_network_coexist: ${e.message}")
+        }
     }
 
     override fun onDestroy() {
